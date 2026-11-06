@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
 from contextlib import contextmanager, nullcontext
-from dataclasses import dataclass, field
-from enum import Enum
 from itertools import zip_longest
 from time import monotonic
 
@@ -20,50 +17,17 @@ from ._verification_process import (
     WorkStopped,
     check_context,
 )
+from .contracts import (
+    CheckStatus,
+    Diagnostic,
+    ErrorCode,
+    LexedToken,
+    TokenDiff,
+    TokenLocation,
+    VerificationProfile,
+    VerificationReport,
+)
 from .verification_fixtures import BUILTIN_FIXTURES, FixtureSelection
-
-
-class CheckStatus(str, Enum):
-    PASS = "PASS"
-    FAIL = "FAIL"
-    NOT_RUN = "NOT_RUN"
-
-
-class ErrorCode(str, Enum):
-    TOKEN_MISMATCH = "TOKEN_MISMATCH"
-    GEOMETRY_MISMATCH = "GEOMETRY_MISMATCH"
-    COMPILE_FAILED = "COMPILE_FAILED"
-    COMPILE_TIMEOUT = "COMPILE_TIMEOUT"
-    BEHAVIOR_MISMATCH = "BEHAVIOR_MISMATCH"
-    EXECUTION_TIMEOUT = "EXECUTION_TIMEOUT"
-    DEPENDENCY_UNAVAILABLE = "DEPENDENCY_UNAVAILABLE"
-    ANALYSIS_TIMEOUT = "ANALYSIS_TIMEOUT"
-    CANCELLED = "CANCELLED"
-    PIPELINE_TIMEOUT = "PIPELINE_TIMEOUT"
-    INTERNAL_ERROR = "INTERNAL_ERROR"
-
-
-@dataclass(frozen=True)
-class Diagnostic:
-    code: ErrorCode
-    stage: str
-    message: str
-    line: int | None = None
-    column: int | None = None
-    details: dict = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
-class TokenLocation:
-    kind: str
-    spelling: str
-    line: int
-    column: int
-
-
-@dataclass(frozen=True)
-class LexedToken(TokenLocation):
-    is_comment: bool = False
 
 
 class LexingError(Exception):
@@ -73,42 +37,6 @@ class LexingError(Exception):
         self.line = line
         self.column = column
         super().__init__(message)
-
-
-@dataclass(frozen=True)
-class TokenDiff:
-    index: int
-    expected: TokenLocation | None
-    actual: TokenLocation | None
-    reason: str
-
-
-@dataclass(frozen=True)
-class VerificationProfile:
-    """Bridge to A's lexer and compiler settings pending the shared contract."""
-
-    lex_source: Callable[..., Iterable[LexedToken]] | None = None
-    compiler: str = "clang"
-    flags: tuple[str, ...] = ("-std=c11", "-pedantic-errors")
-    lex_timeout: float = 5.0
-    compile_timeout: float = 5.0
-    execution_timeout: float = 2.0
-    max_behavior_cells: int = 100_000
-
-
-@dataclass
-class VerificationReport:
-    token_status: CheckStatus = CheckStatus.NOT_RUN
-    geometry_status: CheckStatus = CheckStatus.NOT_RUN
-    compile_status: CheckStatus = CheckStatus.NOT_RUN
-    behavior_status: CheckStatus = CheckStatus.NOT_RUN
-    geometry_metrics: dict = field(default_factory=dict)
-    first_diff: TokenDiff | None = None
-    diagnostics: list[Diagnostic] = field(default_factory=list)
-    skip_reasons: dict[str, str] = field(default_factory=dict)
-    durations: dict[str, float] = field(default_factory=dict)
-    compiler: CompilerInfo | None = None
-    behavior_cases_compared: int = 0
 
 
 @contextmanager

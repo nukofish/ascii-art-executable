@@ -38,9 +38,8 @@ shape types are re-exported from the contract to keep one class per type.
 - The production caller supplies the compiler/lexer profile shared by A and E.
   Ordinary input passes `fixtures=None`. A built-in sample must pass the
   selection object from E along with its matching source.
-- E's pending verification branch has its own report types. The pipeline
-  consumes their existing fields. Move the common types to the shared contract
-  when merging the branches to avoid duplicate definitions.
+- E uses the shared verification types. Its lexer callback receives a context
+  with the shared budget API and a deadline capped by the lexer stage.
 
 The local web interface, production profile and pinned font remain integration
 milestones after the CLI smoke test.

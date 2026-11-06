@@ -63,8 +63,9 @@ verification failures and skipped checks in its report. F preserves the
 plan, rendered code and partial verification report once returned. The
 display treats checks without a result as `NOT_RUN`.
 
-Part E's current branch declares compatible report and profile types.
-When integrating the branches, import the shared definitions from
-`codeart.contracts` and re-export them from `codeart.verify` to preserve
-existing imports. Update the shared types and fixtures together when a
-module interface changes.
+E uses the shared report, status and profile types. Existing imports from
+`codeart.verify` still work. For token verification, E passes the lexer a
+context that supports the shared budget API and limits the deadline to the
+smaller of the lexer budget and the overall deadline. The cancellation
+signal is shared with the pipeline. Update the shared types and fixtures
+together when a module interface changes.

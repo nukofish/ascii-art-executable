@@ -195,6 +195,14 @@ class TokenDiff:
     reason: str
 
 
+@dataclass(frozen=True)
+class CompilerInfo:
+    path: str
+    version: str
+    flags: tuple[str, ...]
+    _fingerprint: tuple[int, ...] = field(repr=False)
+
+
 @dataclass
 class VerificationReport:
     """Independent check results, including completed checks on cancellation."""
@@ -208,7 +216,7 @@ class VerificationReport:
     diagnostics: list[Diagnostic] = field(default_factory=list)
     skip_reasons: dict[str, str] = field(default_factory=dict)
     durations: dict[str, float] = field(default_factory=dict)
-    compiler: object | None = None
+    compiler: CompilerInfo | None = None
     behavior_cases_compared: int = 0
 
 

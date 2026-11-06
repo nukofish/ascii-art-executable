@@ -7,22 +7,21 @@ import shutil
 import signal
 import subprocess
 from collections import Counter
-from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory, mkdtemp
-from threading import Event
 from time import monotonic
 
+from .contracts import CompilerInfo, RunContext, StageError
 
-@dataclass(frozen=True)
-class VerificationContext:
-    """Minimal context used by the standalone verifier and its tests."""
 
-    deadline: float
-    cancel_event: Event | None = None
+class VerificationContext(RunContext):
+    """Use the shared budget API while preserving E's stop exceptions."""
 
     def check(self) -> None:
-        check_context(self)
+        try:
+            super().check()
+        except StageError as exc:
+            raise WorkStopped(exc.diagnostic.code.value) from exc
 
 
 class WorkStopped(Exception):
@@ -96,14 +95,6 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
         stdout, _ = proc.communicate()
         check_context(ctx)
         raise CommandTimedOut(stdout.decode("utf-8", errors="replace"))
-
-
-@dataclass(frozen=True)
-class CompilerInfo:
-    path: str
-    version: str
-    flags: tuple[str, ...]
-    _fingerprint: tuple[int, ...] = field(repr=False)
 
 
 class BuildFailed(Exception):

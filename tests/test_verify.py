@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from codeart._verification_process import BuildSession, run_command, WorkStopped
+from codeart.contracts import RunContext
 from codeart.shapes import FontMetrics, ShapeSpec, SizeRequest, build_mask, geometry_metrics
 from codeart.verification_fixtures import BUILTIN_FIXTURES, select_builtin
 from codeart.verification_regression import CatScaleReference, HoleReference, run_regression
@@ -310,6 +311,26 @@ def test_missing_dependencies_and_no_fixture(tmp_path):
     assert run(case).skip_reasons["behavior"] == "NO_FIXTURE"
     changed_model = replace(case[0], original_source=case[0].original_source + "\n")
     assert run((changed_model, *case[1:]), fixture=fixture).skip_reasons["behavior"] == "NO_FIXTURE"
+
+
+@requires_clang
+def test_lexer_callback_receives_shared_budget_api():
+    event = Event()
+    generation = RunContext(monotonic() + 30, event)
+    case = make_case("int f(void) { return 0; }\n", "f")
+    budgets = []
+
+    def lex(source, *, ctx):
+        assert ctx.cancel_event is event
+        assert ctx.deadline < generation.deadline
+        budgets.append(ctx.remaining_s())
+        return clang_lex_for_test(source, ctx=ctx)
+
+    report = run(case, selected_profile=profile(lex_source=lex, lex_timeout=5.0),
+                 ctx=generation)
+    assert statuses(report) == ("PASS", "PASS", "PASS", "NOT_RUN"), report.diagnostics
+    assert len(budgets) == 1
+    assert 0 < budgets[0] <= 5.0
 
 
 @requires_clang
