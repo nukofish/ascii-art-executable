@@ -291,6 +291,38 @@ def test_layout_timeout_is_shared_across_retries():
     assert exc_info.value.diagnostic.code == ErrorCode.LAYOUT_TIMEOUT
 
 
+def test_mask_building_respects_layout_stage_budget():
+    clock_state = {"t": 0.0}
+
+    def fake_clock():
+        return clock_state["t"]
+
+    overall = RunContext(deadline=100.0, clock=fake_clock)
+
+    def slow_mask_builder(shape_spec, size_request, font_metrics, *, ctx):
+        # Simulate one second of work per iteration, checking the context.
+        for _ in range(10):
+            clock_state["t"] += 1.0
+            ctx.check()
+        # Reaching here means the stage budget was not enforced during generation.
+        return _rect_mask(5)
+
+    tokens = make_tokens([("identifier", "a")])
+    model = model_for(tokens)
+    options = LayoutOptions(layout_timeout_s=2.0)
+
+    with pytest.raises(StageError) as exc_info:
+        fit_layout(model, ShapeSpec("circle"), options,
+                   mask_builder=slow_mask_builder,
+                   join_checker=always_join, ctx=overall)
+
+    diagnostic = exc_info.value.diagnostic
+    assert diagnostic.code == ErrorCode.LAYOUT_TIMEOUT
+    # The builder must stop at the 2-second mark, not run all 10 seconds.
+    assert fake_clock() == 2.0
+    assert "attempt_history" in diagnostic.details
+
+
 def test_elapsed_time_includes_token_packing():
     tokens = tuple(Token(i, "identifier", "v", 1, 1, 1) for i in range(20))
     model = model_for(tokens)

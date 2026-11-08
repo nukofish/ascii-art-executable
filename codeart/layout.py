@@ -13,9 +13,11 @@ is recorded; a final failure raises :class:`StageError` carrying the
 ``attempt_history`` in the diagnostic details, as required by the v1.4
 contract.
 
-Cancellation and time budgets are enforced while packing, not just between
-attempts.  All retries share one layout-stage deadline derived from
-``options.layout_timeout_s`` and bounded by the pipeline's overall deadline.
+Cancellation and time budgets are enforced during both mask generation and
+packing, not just between attempts.  A stage-aware context is passed to the
+mask builder, so work stops promptly when the budget is reached.  All retries
+share one layout-stage deadline derived from ``options.layout_timeout_s`` and
+bounded by the pipeline's overall deadline.
 """
 
 from __future__ import annotations
@@ -41,29 +43,63 @@ from .contracts import (
 _GAP_CELLS = 1
 
 
-def _guard(ctx, stage_deadline: float) -> None:
-    """Respect cancellation, the pipeline deadline and the layout-stage budget.
+class _LayoutContext:
+    """A run-context view that also enforces the layout-stage deadline.
 
-    Ordering matters: explicit cancellation and the overall pipeline deadline
-    are reported first via ``ctx.check()``; only then is the layout-specific
-    budget checked, so a stage timeout is reported as ``LAYOUT_TIMEOUT``.
+    It is passed to the mask builder so the stage budget is enforced *during*
+    mask generation, not only after the mask returns.  It preserves the
+    wrapped context's shared cancellation signal and overall pipeline
+    deadline, and adds the tighter layout-stage deadline.
     """
-    ctx.check()  # CANCELLED or PIPELINE_TIMEOUT
-    if ctx.clock() >= stage_deadline:
-        raise StageError(Diagnostic(
-            ErrorCode.LAYOUT_TIMEOUT,
-            "layout",
-            "Layout stage exceeded its time budget",
-        ))
+
+    def __init__(self, ctx, stage_deadline: float) -> None:
+        self._ctx = ctx
+        self._stage_deadline = stage_deadline
+
+    @property
+    def deadline(self) -> float:
+        # The effective deadline is the tighter layout-stage deadline.
+        return min(self._ctx.deadline, self._stage_deadline)
+
+    @property
+    def cancel_event(self):
+        return self._ctx.cancel_event
+
+    @property
+    def clock(self):
+        return self._ctx.clock
+
+    def remaining_s(self) -> float:
+        return max(0.0, self.deadline - self.clock())
+
+    def check(self) -> None:
+        """Cancellation and the pipeline deadline first, then the stage budget.
+
+        Ordering matters: explicit cancellation and the overall pipeline
+        deadline are reported via the wrapped context; only then is the
+        layout-specific budget checked, so a stage timeout is reported as
+        ``LAYOUT_TIMEOUT``.
+        """
+        self._ctx.check()  # CANCELLED or PIPELINE_TIMEOUT
+        if self.clock() >= self._stage_deadline:
+            raise StageError(Diagnostic(
+                ErrorCode.LAYOUT_TIMEOUT,
+                "layout",
+                "Layout stage exceeded its time budget",
+            ))
+
+    def raise_if_cancelled(self) -> None:
+        # B's per-row hook may use this name; enforce the same full budget.
+        self.check()
 
 
-def _pack(mask, tokens, join_checker: JoinChecker, profile, ctx, stage_deadline):
+def _pack(mask, tokens, join_checker: JoinChecker, profile, layout_ctx):
     """Greedily pack ``tokens`` into the mask spans; return placement data.
 
     Returns ``(placements, protected_blanks, failure_token_index, reason)``.
-    ``failure_token_index`` is ``None`` on success.  The guard runs on every
-    iteration, so a cancellation or timeout raised by the join checker or by
-    elapsed time is honoured even on the final token.
+    ``failure_token_index`` is ``None`` on success.  The layout context is
+    checked on every iteration, so a cancellation or timeout raised by the
+    join checker or by elapsed time is honoured even on the final token.
     """
     # Flatten the spans in reading order (row, then span start).
     spans = [
@@ -81,7 +117,7 @@ def _pack(mask, tokens, join_checker: JoinChecker, profile, ctx, stage_deadline)
 
     token_index = 0
     while token_index < len(tokens):
-        _guard(ctx, stage_deadline)
+        layout_ctx.check()
 
         if span_index >= len(spans):
             # No remaining span can hold the current token.
@@ -121,7 +157,7 @@ def _pack(mask, tokens, join_checker: JoinChecker, profile, ctx, stage_deadline)
             run_tokens = []
 
     # Re-check after the final token: a checker may have cancelled on the last call.
-    _guard(ctx, stage_deadline)
+    layout_ctx.check()
     return placements, frozenset(protected), None, None
 
 
@@ -183,6 +219,8 @@ def fit_layout(
     history: list[AttemptRecord] = []
     # All retries share one layout-stage deadline, never beyond the pipeline.
     stage_deadline = min(ctx.clock() + options.layout_timeout_s, ctx.deadline)
+    # A stage-aware context enforces the budget while the mask is built.
+    layout_ctx = _LayoutContext(ctx, stage_deadline)
 
     for attempt in range(options.max_attempts):
         attempt_started = ctx.clock()
@@ -194,7 +232,7 @@ def fit_layout(
             height = max(1, math.ceil(options.base_height_rows * requested_scale))
 
             mask = mask_builder(
-                shape_spec, SizeRequest(height), options.font_metrics, ctx=ctx)
+                shape_spec, SizeRequest(height), options.font_metrics, ctx=layout_ctx)
 
             # Refuse to grow beyond the configured canvas limits.
             if mask.width > options.max_columns or mask.height > options.max_rows:
@@ -207,7 +245,7 @@ def fit_layout(
                 raise _layout_limit(history, reason)
 
             placements, protected, failure_index, reason = _pack(
-                mask, model.tokens, join_checker, model.profile, ctx, stage_deadline)
+                mask, model.tokens, join_checker, model.profile, layout_ctx)
         except StageError as exc:
             # Record the interrupted attempt (best effort) before propagating.
             if not attempt_recorded and mask is not None:
