@@ -22,6 +22,7 @@ from .contracts import (
     Diagnostic,
     ErrorCode,
     LexedToken,
+    StageError,
     TokenDiff,
     TokenLocation,
     VerificationProfile,
@@ -91,6 +92,13 @@ def _check_tokens(model, rendered, profile, ctx, report):
             if not token.is_comment:
                 tokens.append(token)
         check_context(lex_ctx)
+    except StageError as exc:
+        diagnostic = exc.diagnostic
+        if diagnostic.code not in (ErrorCode.DEPENDENCY_UNAVAILABLE, ErrorCode.ANALYSIS_TIMEOUT):
+            raise
+        report.diagnostics.append(diagnostic)
+        report.skip_reasons["token"] = diagnostic.code.value
+        return None
     except (FileNotFoundError, DependencyUnavailable) as exc:
         _skip(report, "token", ErrorCode.DEPENDENCY_UNAVAILABLE, str(exc))
         return None
@@ -277,12 +285,13 @@ def verify(model, plan, rendered, fixtures, profile, *, ctx) -> VerificationRepo
             else:
                 with _stage(report, stage, ctx):
                     _check_behavior(builds, fixture, rendered.source_text, profile, ctx, report)
-    except WorkStopped as exc:
-        code = ErrorCode(exc.reason)
-        report.diagnostics.append(Diagnostic(code, stage, str(exc)))
+    except (StageError, WorkStopped) as exc:
+        diagnostic = (exc.diagnostic if isinstance(exc, StageError)
+                      else Diagnostic(ErrorCode(exc.reason), stage, str(exc)))
+        report.diagnostics.append(diagnostic)
         for name in ("token", "geometry", "compile", "behavior"):
             if getattr(report, f"{name}_status") == CheckStatus.NOT_RUN:
-                report.skip_reasons.setdefault(name, code.value)
+                report.skip_reasons.setdefault(name, diagnostic.code.value)
     except Exception as exc:
         _skip(report, stage, ErrorCode.INTERNAL_ERROR, f"{type(exc).__name__}: {exc}")
         for name in ("geometry", "compile", "behavior"):

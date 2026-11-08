@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from codeart._verification_process import BuildSession, run_command, WorkStopped
-from codeart.contracts import RunContext
+from codeart.contracts import Diagnostic, RunContext, StageError
 from codeart.shapes import FontMetrics, ShapeSpec, SizeRequest, build_mask, geometry_metrics
 from codeart.verification_fixtures import BUILTIN_FIXTURES, select_builtin
 from codeart.verification_regression import CatScaleReference, HoleReference, run_regression
@@ -343,6 +343,40 @@ def test_lexer_timeout_keeps_geometry_result():
     report = run(case, selected_profile=profile(lex_source=timed_out))
     assert statuses(report) == ("NOT_RUN", "PASS", "NOT_RUN", "NOT_RUN")
     assert report.skip_reasons["token"] == "ANALYSIS_TIMEOUT"
+
+
+@requires_clang
+@pytest.mark.parametrize("code", (ErrorCode.DEPENDENCY_UNAVAILABLE, ErrorCode.ANALYSIS_TIMEOUT))
+def test_lexer_stage_error_preserves_diagnostic_and_checks_geometry(code):
+    case = make_case("int f(void) { return 0; }\n", "f")
+    diagnostic = Diagnostic(code, "analysis", "Lexer unavailable or timed out", 2, 7,
+                            {"adapter": "clang"})
+
+    def lex(source, *, ctx):
+        raise StageError(diagnostic)
+
+    report = run(case, selected_profile=profile(lex_source=lex))
+    assert report.diagnostics == [diagnostic]
+    assert statuses(report) == ("NOT_RUN", "PASS", "NOT_RUN", "NOT_RUN")
+    assert report.skip_reasons == {
+        "token": code.value, "compile": "TOKEN_NOT_PASS", "behavior": "TOKEN_NOT_PASS",
+    }
+
+
+@requires_clang
+@pytest.mark.parametrize("code", (ErrorCode.CANCELLED, ErrorCode.PIPELINE_TIMEOUT))
+def test_public_stop_preserves_completed_checks(code, monkeypatch):
+    case = make_case("int f(void) { return 0; }\n", "f")
+    diagnostic = Diagnostic(code, "pipeline", "Generation stopped", details={"at": "compile"})
+
+    def compiler_info(self, profile, ctx):
+        raise StageError(diagnostic)
+
+    monkeypatch.setattr(BuildSession, "compiler_info", compiler_info)
+    report = run(case)
+    assert report.diagnostics == [diagnostic]
+    assert statuses(report) == ("PASS", "PASS", "NOT_RUN", "NOT_RUN")
+    assert report.skip_reasons == {"compile": code.value, "behavior": code.value}
 
 
 @requires_clang
