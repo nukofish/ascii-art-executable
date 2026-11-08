@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import time
+from threading import Event
 from time import monotonic
 
 import pytest
 
-from codeart import FontMetrics, ShapeSpec, build_mask
+from codeart import FontMetrics, Mask, ShapeSpec, build_mask
 from codeart._verification_geometry import check_geometry
 from codeart.contracts import (
     Diagnostic,
@@ -168,9 +170,11 @@ def test_growth_retries_until_the_tokens_fit():
     # The final record is the successful one.
     last = plan.attempt_history[-1]
     assert last.failure_token_index is None and last.reason is None
-    # Consecutive attempts grow by the configured factor.
-    scales = [record.scale for record in plan.attempt_history]
-    assert scales == [pytest.approx(1.25 ** i) for i in range(len(scales))]
+    # Scales are realized from the rounded mask height, not the requested
+    # factor, so each record's scale equals its height divided by the base.
+    for record in plan.attempt_history:
+        assert record.scale == pytest.approx(record.height / options.base_height_rows)
+        assert record.scale >= 1.0
 
 
 def test_exhausted_attempts_raise_layout_limit_with_history():
@@ -230,3 +234,129 @@ def test_grown_plan_renders_and_passes_geometry_check():
     rendered = render_source(model, plan, FillOptions(), ctx=context())
     _, issues = check_geometry(model, plan, rendered, None, context())
     assert not issues.reasons, issues.reasons
+
+
+# ------------------------------------------------------------- P1 cancellation / timeout
+
+
+def test_cancellation_in_join_checker_stops_layout():
+    tokens = make_tokens([("identifier", "a"), ("identifier", "b"), ("identifier", "c")])
+    model = model_for(tokens)
+    event = Event()
+
+    def cancelling_checker(run, nxt, profile):
+        event.set()  # trigger cancellation during a join check
+        return False
+
+    ctx = RunContext(monotonic() + 30, event)
+    with pytest.raises(StageError) as exc_info:
+        fit_layout(model, ShapeSpec("circle"), LayoutOptions(),
+                   mask_builder=build_mask, join_checker=cancelling_checker, ctx=ctx)
+    assert exc_info.value.diagnostic.code == ErrorCode.CANCELLED
+
+
+def test_layout_stage_timeout_raises_layout_timeout():
+    tokens = tuple(Token(i, "identifier", "v", 1, 1, 1) for i in range(40))
+    model = model_for(tokens)
+
+    def slow_checker(run, nxt, profile):
+        time.sleep(0.01)  # make the lexical decision consume the tiny budget
+        return False
+
+    options = LayoutOptions(layout_timeout_s=0.001)
+    with pytest.raises(StageError) as exc_info:
+        fit_layout(model, ShapeSpec("circle"), options,
+                   mask_builder=build_mask, join_checker=slow_checker, ctx=context())
+
+    diagnostic = exc_info.value.diagnostic
+    assert diagnostic.code == ErrorCode.LAYOUT_TIMEOUT
+    assert len(diagnostic.details["attempt_history"]) >= 1
+
+
+def test_layout_timeout_is_shared_across_retries():
+    # A small base mask forces growth; the absolute stage deadline must not
+    # be reset when a new attempt starts.
+    tokens = tuple(Token(i, "identifier", "v", 1, 1, 1) for i in range(300))
+    model = model_for(tokens)
+
+    def slow_checker(run, nxt, profile):
+        time.sleep(0.01)
+        return True
+
+    options = LayoutOptions(base_height_rows=4, layout_timeout_s=0.001,
+                            max_columns=800, max_rows=600)
+    with pytest.raises(StageError) as exc_info:
+        fit_layout(model, ShapeSpec("circle"), options,
+                   mask_builder=build_mask, join_checker=slow_checker, ctx=context())
+    assert exc_info.value.diagnostic.code == ErrorCode.LAYOUT_TIMEOUT
+
+
+def test_elapsed_time_includes_token_packing():
+    tokens = tuple(Token(i, "identifier", "v", 1, 1, 1) for i in range(20))
+    model = model_for(tokens)
+
+    def slow_checker(run, nxt, profile):
+        if run:
+            time.sleep(0.005)
+        return True
+
+    plan = fit_layout(model, ShapeSpec("circle"), LayoutOptions(),
+                      mask_builder=build_mask, join_checker=slow_checker, ctx=context())
+    # The successful record must account for the packing sleeps, not just the
+    # (near-instant) mask generation.
+    assert plan.attempt_history[-1].elapsed_s >= 0.05
+
+
+# ------------------------------------------------------------- P2 run reset
+
+
+def _rect_mask(width, height=1):
+    allowed = tuple(tuple(True for _ in range(width)) for _ in range(height))
+    spans = tuple(((0, width),) for _ in range(height))
+    return Mask(kind="rect", width=width, height=height, allowed=allowed,
+                spans=spans, scale=1.0, font_metrics=FontMetrics())
+
+
+def test_separator_resets_the_contiguous_run():
+    width = 5
+    tokens = make_tokens([
+        ("identifier", "a"), ("identifier", "b"),
+        ("punctuator", "+"), ("identifier", "c"),
+    ])
+    model = model_for(tokens)
+
+    def fixed_builder(shape_spec, size_request, font_metrics, *, ctx):
+        return _rect_mask(width)
+
+    def strict_checker(run, nxt, profile):
+        if not run:
+            return True
+        word = lambda t: t.kind in ("identifier", "keyword")
+        # A whitespace-free run must not already contain a word-word join.
+        for left, right in zip(run, run[1:]):
+            if word(left) and word(right):
+                return False
+        return not (word(run[-1]) and word(nxt))
+
+    # The buggy engine returned LAYOUT_LIMIT here; the fixed one fits "a b+c".
+    plan = fit_layout(model, ShapeSpec("circle"), LayoutOptions(),
+                      mask_builder=fixed_builder, join_checker=strict_checker, ctx=context())
+    assert len(plan.placements) == 4
+    assert (0, 1) in plan.protected_blanks
+    assert [p.col for p in plan.placements] == [0, 2, 3, 4]
+
+
+# ------------------------------------------------------------- P2 actual scale
+
+
+def test_actual_scale_reflects_rounded_height():
+    tokens = make_tokens([("identifier", "a")])
+    model = model_for(tokens)
+    options = LayoutOptions(base_height_rows=32, initial_scale=1.01)
+
+    plan = fit_layout(model, ShapeSpec("circle"), options,
+                      mask_builder=build_mask, join_checker=always_join, ctx=context())
+
+    assert plan.mask.height == 33
+    assert plan.actual_scale == pytest.approx(33 / 32)
+    assert plan.attempt_history[0].scale == pytest.approx(33 / 32)
