@@ -72,7 +72,7 @@ def generate(
         stage = "verification"
         ctx.check()
         result.verification = deps.verifier(
-            model, result.plan, result.rendered, request.fixtures, request.profile, ctx=ctx,
+            model, result.plan, result.rendered, request.fixtures, model.profile, ctx=ctx,
         )
         result.diagnostics.extend(result.verification.diagnostics)
         stop_codes = (ErrorCode.CANCELLED, ErrorCode.PIPELINE_TIMEOUT)

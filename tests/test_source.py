@@ -1,151 +1,141 @@
-"""tests/test_source.py - 成员 A 的单元测试与第一天交付 fixtures"""
+"""Source analysis, shared contracts, isolation and real pipeline regression."""
+
+import os
+import sys
+from threading import Event, Timer
+from time import monotonic
 
 import pytest
-from codeart.source import (
-    ErrorCode,
-    PipelineError,
-    Token,
-    analyze_source,
-    can_join,
+
+from codeart import source
+from codeart.contracts import (
+    ErrorCode, GenerationRequest, RunContext, ShapeSpec, SourceModel,
+    StageError, Token, VerificationProfile,
 )
+from codeart.pipeline import generate
+from codeart.verification_fixtures import BUILTIN_FIXTURES, select_builtin
+
+SIMPLE = "int f(void) { return 0; }"
 
 
-# ==============================================================================
-# 第一天冻结的交接 Mock 数据 (供 C/D/E 脱机使用)
-# ==============================================================================
-
-MOCK_MAX2_SOURCE = """int max2(int a, int b) {
-    if (a > b) return a;
-    return b;
-}"""
-
-MOCK_TOKENS = [
-    Token(0, "KEYWORD", "int", 3, 1, 1),
-    Token(1, "IDENTIFIER", "max2", 4, 1, 5),
-    Token(2, "PUNCTUATION", "(", 1, 1, 9),
-    Token(3, "KEYWORD", "int", 3, 1, 10),
-    Token(4, "IDENTIFIER", "a", 1, 1, 14),
-    Token(5, "PUNCTUATION", ",", 1, 1, 15),
-    Token(6, "KEYWORD", "int", 3, 1, 17),
-    Token(7, "IDENTIFIER", "b", 1, 1, 21),
-    Token(8, "PUNCTUATION", ")", 1, 1, 22),
-    Token(9, "PUNCTUATION", "{", 1, 1, 24),
-    Token(10, "KEYWORD", "if", 2, 2, 5),
-    Token(11, "PUNCTUATION", "(", 1, 2, 8),
-    Token(12, "IDENTIFIER", "a", 1, 2, 9),
-    Token(13, "PUNCTUATION", ">", 1, 2, 11),
-    Token(14, "IDENTIFIER", "b", 1, 2, 13),
-    Token(15, "PUNCTUATION", ")", 1, 2, 14),
-    Token(16, "KEYWORD", "return", 6, 2, 16),
-    Token(17, "IDENTIFIER", "a", 1, 2, 23),
-    Token(18, "PUNCTUATION", ";", 1, 2, 24),
-    Token(19, "KEYWORD", "return", 6, 3, 5),
-    Token(20, "IDENTIFIER", "b", 1, 3, 12),
-    Token(21, "PUNCTUATION", ";", 1, 3, 13),
-    Token(22, "PUNCTUATION", "}", 1, 4, 1),
-]
+def test_shared_contracts_and_missing_final_newline():
+    model = source.analyze_source(SIMPLE)
+    assert isinstance(model, SourceModel)
+    assert isinstance(model.tokens[0], Token)
+    assert model.original_source == SIMPLE
+    assert model.normalized_source == SIMPLE
+    assert model.function_name == "f"
+    assert model.profile.lex_source is not None
 
 
-# ==============================================================================
-# analyze_source 单元测试
-# ==============================================================================
-
-def test_analyze_valid_function():
-    """测试合法的单函数能够完整解析并保留原始 token"""
-    model = analyze_source(MOCK_MAX2_SOURCE)
-    assert model.function_name == "max2"
-    assert len(model.tokens) == len(MOCK_TOKENS)
-    assert model.tokens[0].spelling == "int"
-    assert model.tokens[1].spelling == "max2"
-
-
-def test_reject_external_function():
-    """拒绝引用未声明的外部函数: return g(x)"""
-    code = "int f(int x) { return g(x); }"
-    with pytest.raises(PipelineError) as exc_info:
-        analyze_source(code)
-    assert exc_info.value.diagnostic.code == ErrorCode.UNSUPPORTED_SOURCE
-    assert "外部函数" in exc_info.value.diagnostic.message or "未声明" in exc_info.value.diagnostic.message
-
-
-def test_reject_external_variable():
-    """拒绝引用外部全局对象: return ext"""
-    code = "int f(void) { return ext; }"
-    with pytest.raises(PipelineError) as exc_info:
-        analyze_source(code)
-    assert exc_info.value.diagnostic.code == ErrorCode.UNSUPPORTED_SOURCE
+@pytest.mark.parametrize("text", [
+    "int f(int x) { return g(x); }",
+    "int f(void) { return ext; }",
+    "int f(void) { extern int g(void); return g(); }",
+    "int f(void) { extern int x; return x; }",
+    "int x; int f(void) { return x; }",
+    "int g(void); int f(void) { return g(); }",
+    "int f(void) { return __LINE__; }",
+    "int f(void) { return __INT_MAX__; }",
+    "int f(void) { return __TIMESTAMP__[0]; }",
+    "int f(void) { return __func__[0]; }",
+    "int f(void) { return \"a\tb\"[1]; }",
+    "int f(void) { ret\\\nurn 0; }",
+    "int f(void) { /* 中文 */ return 0; }",
+    "#define VALUE 0\nint f(void) { return VALUE; }",
+])
+def test_reject_unsupported_source(text):
+    with pytest.raises(StageError) as exc:
+        source.analyze_source(text)
+    assert exc.value.diagnostic.code == ErrorCode.UNSUPPORTED_SOURCE
+    assert exc.value.diagnostic.line is not None
 
 
-def test_reject_macro_usage():
-    """拒绝使用预定义宏 (即使没有 # 号)"""
-    code = "int f(void) { return __LINE__; }"
-    with pytest.raises(PipelineError) as exc_info:
-        analyze_source(code)
-    assert exc_info.value.diagnostic.code == ErrorCode.UNSUPPORTED_SOURCE
-    assert "__LINE__" in exc_info.value.diagnostic.message
+def test_reject_invalid_syntax():
+    with pytest.raises(StageError) as exc:
+        source.analyze_source("int f(void) { return ;;; ??? }")
+    assert exc.value.diagnostic.code == ErrorCode.INVALID_SOURCE
 
 
-def test_reject_non_ascii():
-    """拒绝非 ASCII 字符并准确定位行列"""
-    code = "int f(void) { int a = 1; /* 中文注释不影响，但代码字符影响 */ return a; }"
-    model = analyze_source(code)
+def test_comments_literals_and_crlf():
+    text = '/*\r\n# comment only\r\n*/\r\nint f(int i){return "__LINE__ /* #" [i];}\r\n'
+    model = source.analyze_source(text)
+    assert model.original_source == text
+    assert "\r" not in model.normalized_source
     assert len(model.original_comments) == 1
-
-    # 变量名为非 ASCII 时拒绝
-    invalid_code = "int f(void) { int 变量 = 1; return 变量; }"
-    with pytest.raises(PipelineError) as exc_info:
-        analyze_source(invalid_code)
-    assert exc_info.value.diagnostic.code == ErrorCode.UNSUPPORTED_SOURCE
+    assert model.tokens[0].source_line == 4
+    assert any(token.spelling == '"__LINE__ /* #"' for token in model.tokens)
 
 
-def test_allow_self_recursion():
-    """允许单函数内部的自身递归调用"""
-    code = "int gcd(int a, int b) { return b == 0 ? a : gcd(b, a % b); }"
-    model = analyze_source(code)
+def test_recursion_and_escaped_tab_are_supported():
+    model = source.analyze_source("int gcd(int a,int b){return b==0?a:gcd(b,a%b);}")
     assert model.function_name == "gcd"
+    model = source.analyze_source('int f(int i){return "a\\tb"[i];}')
+    assert any(token.spelling == '"a\\tb"' for token in model.tokens)
 
 
-# ==============================================================================
-# can_join 单元测试 (涵盖正例与全部边界反例)
-# ==============================================================================
-
-def test_can_join_allowed_cases():
-    """测试常规允许紧贴的场景: f(x), a[0], i++"""
-    tok_f = Token(0, "IDENTIFIER", "f", 1, 1, 1)
-    tok_lparen = Token(1, "PUNCTUATION", "(", 1, 1, 2)
-    tok_x = Token(2, "IDENTIFIER", "x", 1, 1, 3)
-    tok_rparen = Token(3, "PUNCTUATION", ")", 1, 1, 4)
-
-    assert can_join([tok_f], tok_lparen) is True
-    assert can_join([tok_f, tok_lparen], tok_x) is True
-    assert can_join([tok_f, tok_lparen, tok_x], tok_rparen) is True
-
-    # 自增符号
-    tok_i = Token(0, "IDENTIFIER", "i", 1, 1, 1)
-    tok_plusplus = Token(1, "PUNCTUATION", "++", 2, 1, 2)
-    assert can_join([tok_i], tok_plusplus) is True
+@pytest.mark.parametrize("run,next_token,expected", [
+    ([("IDENTIFIER", "f")], ("PUNCTUATION", "("), True),
+    ([("IDENTIFIER", "i")], ("PUNCTUATION", "++"), True),
+    ([("PUNCTUATION", "+")], ("PUNCTUATION", "+"), False),
+    ([("PUNCTUATION", "/")], ("PUNCTUATION", "*"), False),
+    ([("PUNCTUATION", "."), ("PUNCTUATION", ".")], ("PUNCTUATION", "."), False),
+    ([("KEYWORD", "int")], ("IDENTIFIER", "a"), False),
+    ([("IDENTIFIER", "a"), ("PUNCTUATION", "+"), ("IDENTIFIER", "b"),
+      ("PUNCTUATION", "+"), ("IDENTIFIER", "c")], ("PUNCTUATION", ";"), True),
+    ([("KEYWORD", "f")], ("PUNCTUATION", "("), False),
+])
+def test_full_run_kind_and_spelling_comparison(run, next_token, expected):
+    tokens = [Token(i, kind, spelling, len(spelling), 1, 1)
+              for i, (kind, spelling) in enumerate([*run, next_token])]
+    assert source.can_join(tokens[:-1], tokens[-1], VerificationProfile()) is expected
 
 
-def test_can_join_rejected_cases():
-    """测试必须拦截的分隔场景"""
-    # 1. 独立加号合并为 ++: '+' 与 '+'
-    tok_plus1 = Token(0, "PUNCTUATION", "+", 1, 1, 1)
-    tok_plus2 = Token(1, "PUNCTUATION", "+", 1, 1, 2)
-    assert can_join([tok_plus1], tok_plus2) is False
+def test_invalid_input_keeps_diagnostic_through_pipeline():
+    result = generate(GenerationRequest("int f(void){return 变量;}", ShapeSpec("circle")))
+    assert result.plan is None
+    assert result.diagnostics[0].code == ErrorCode.UNSUPPORTED_SOURCE
 
-    # 2. 注释起始符: '/' 与 '*'
-    tok_slash = Token(0, "PUNCTUATION", "/", 1, 1, 1)
-    tok_star = Token(1, "PUNCTUATION", "*", 1, 1, 2)
-    assert can_join([tok_slash], tok_star) is False
 
-    # 3. 三个连续点合并为省略号 '...'
-    tok_dot1 = Token(0, "PUNCTUATION", ".", 1, 1, 1)
-    tok_dot2 = Token(1, "PUNCTUATION", ".", 1, 1, 2)
-    tok_dot3 = Token(2, "PUNCTUATION", ".", 1, 1, 3)
-    # 虽然两个点在 C 中可能非终结符，但三个连续点会变成 VARARGS '...'
-    assert can_join([tok_dot1, tok_dot2], tok_dot3) is False
+@pytest.mark.parametrize("cancel", [False, True])
+def test_analysis_stops_and_reaps_worker(monkeypatch, tmp_path, cancel):
+    actual_run = source.run_command
+    pid_file = tmp_path / "worker.pid"
 
-    # 4. 标识符紧接标识符 (int a -> inta)
-    tok_int = Token(0, "KEYWORD", "int", 3, 1, 1)
-    tok_a = Token(1, "IDENTIFIER", "a", 1, 1, 4)
-    assert can_join([tok_int], tok_a) is False
+    def slow_worker(args, **kwargs):
+        script = (
+            "import os,time; from pathlib import Path; "
+            f"Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(10)"
+        )
+        return actual_run([sys.executable, "-c", script], **kwargs)
+
+    monkeypatch.setattr(source, "run_command", slow_worker)
+    event = Event()
+    timer = Timer(0.25, event.set)
+    if cancel:
+        timer.start()
+    try:
+        with pytest.raises(StageError) as exc:
+            source.analyze_source(SIMPLE, VerificationProfile(lex_timeout=0.5),
+                                  ctx=RunContext(monotonic() + 30, event))
+    finally:
+        timer.cancel()
+    expected = ErrorCode.CANCELLED if cancel else ErrorCode.ANALYSIS_TIMEOUT
+    assert exc.value.diagnostic.code == expected
+    assert pid_file.exists()
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pid_file.read_text()), 0)
+
+
+@pytest.mark.parametrize("name", tuple(BUILTIN_FIXTURES))
+@pytest.mark.parametrize("shape", ("circle", "cat", "code"))
+def test_real_pipeline_builtin_matrix(name, shape):
+    selection = select_builtin(name)
+    request = GenerationRequest(selection.fixture.source, ShapeSpec(shape), fixtures=selection)
+    result = generate(request)
+    assert not result.diagnostics, result.diagnostics
+    report = result.verification
+    assert report is not None
+    assert tuple(getattr(report, f"{stage}_status").value
+                 for stage in ("token", "geometry", "compile", "behavior")) == ("PASS",) * 4
+    assert report.behavior_cases_compared == 8

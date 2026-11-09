@@ -3,8 +3,22 @@ A simple cli tool to reformat C/C++ code into executable ascii art.
 
 ## F integration smoke demo
 
-Run from the repository root with Python 3.10 or later. The demo uses the
-standard library and the existing Part B mask generator.
+Run from the repository root with Python 3.10 or later. The smoke demo uses
+the standard library and the existing Part B mask generator.
+
+For source analysis and the real pipeline, install the pinned Python
+dependencies and a C11 Clang compiler. The Python libclang package includes
+its native library. Development and regression checks also require pytest.
+
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements-dev.txt
+python -m codeart.cli --source example.c --shape cat --output generated.c
+```
+
+[Source analysis and supported inputs](docs/modules/source.md) describes the
+raw lexer, error handling and isolation.
 
 ```sh
 python3 -m codeart.cli --demo --shape circle --output /tmp/codeart-demo.c
