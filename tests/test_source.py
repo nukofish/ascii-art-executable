@@ -33,6 +33,8 @@ def test_shared_contracts_and_missing_final_newline():
     "int f(void) { return ext; }",
     "int f(void) { extern int g(void); return g(); }",
     "int f(void) { extern int x; return x; }",
+    "int f(void) { static int c=0; return ++c; }",
+    "int f(void) { static const int c=1; return c; }",
     "int x; int f(void) { return x; }",
     "int g(void); int f(void) { return g(); }",
     "int f(void) { return __LINE__; }",
@@ -139,3 +141,18 @@ def test_real_pipeline_builtin_matrix(name, shape):
     assert tuple(getattr(report, f"{stage}_status").value
                  for stage in ("token", "geometry", "compile", "behavior")) == ("PASS",) * 4
     assert report.behavior_cases_compared == 8
+
+
+@pytest.mark.parametrize("text", [
+    "int f(int x){return g(x);}",
+    "int f(void){return ext;}",
+])
+def test_external_diagnostics_use_stable_codes(text):
+    # AST and compiler diagnostics may have different human-readable wording.
+    with pytest.raises(StageError) as exc:
+        source.analyze_source(text)
+    diagnostic = exc.value.diagnostic
+    assert diagnostic.code == ErrorCode.UNSUPPORTED_SOURCE
+    assert diagnostic.stage == "analysis"
+    assert diagnostic.line == 1
+    assert diagnostic.column > 0

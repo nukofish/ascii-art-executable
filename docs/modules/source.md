@@ -1,7 +1,10 @@
 # Source analysis and lexical boundaries
 
 Part A accepts one self-contained C11 function using printable ASCII source.
-Parameters, local declarations and recursive calls are supported. External
+Parameters, automatic local declarations and recursive calls are supported.
+Static local variables, including static const variables, are rejected because
+they retain storage across calls. This keeps the supported input scope free
+of persistent local state. External
 functions and objects, top-level declarations, preprocessing directives,
 predefined macros, trigraphs, line splicing and real tabs inside tokens
 produce shared diagnostics. Non-ASCII comments are also rejected. Escaped
@@ -29,11 +32,18 @@ input has no behavior fixture and E records `NO_FIXTURE`.
 
 `can_join(run_tokens, next_token, profile)` re-lexes the entire contiguous
 token run. It compares both token kind and raw spelling and caches completed
-decisions by tokens, compiler flags and lexer timeout. Each cache miss uses
-a bounded child process. C checks its context before and after join decisions
+decisions by tokens, compiler flags and lexer timeout. Cache misses share
+one serialized child process and reuse its libclang index. Requests have
+bounded wait and execution times. A hung or failed child is terminated and
+reaped; a subsequent request can start a fresh child. The worker is closed
+when the parent exits. C checks its context before and after join decisions
 as part of its token loop.
 
 Install the pinned dependencies from `requirements.txt` and make a C11
 Clang compiler available on PATH. For tests, install `requirements-dev.txt`
 and run `python -m pytest -q`. The source tests include the complete six
 function by three shape pipeline matrix and 144 behavior comparisons.
+
+Diagnostic codes and structured locations are the interface for callers and
+tests. Human-readable messages can differ between AST and compiler paths.
+External calls and undeclared objects both use `UNSUPPORTED_SOURCE`.

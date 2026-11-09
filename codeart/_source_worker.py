@@ -1,5 +1,6 @@
 """Isolated libclang work. The parent owns deadlines and process cleanup."""
 
+from functools import lru_cache
 import json
 from pathlib import Path
 import sys
@@ -16,6 +17,12 @@ def reject(message, location=None, code="UNSUPPORTED_SOURCE"):
     raise SourceRejected(code, message, location)
 
 
+@lru_cache(maxsize=1)
+def _index():
+    from clang.cindex import Index
+    return Index.create()
+
+
 def process(request):
     import clang.cindex as clang
 
@@ -23,7 +30,7 @@ def process(request):
     # A virtual final LF satisfies strict C11 parsing without changing source positions.
     parsing_text = text if text.endswith("\n") else text + "\n"
     filename = "input.c"
-    index = clang.Index.create()
+    index = _index()
     tu = index.parse(
         filename, args=request["flags"],
         unsaved_files=[(filename, parsing_text)],
@@ -67,6 +74,8 @@ def process(request):
     nodes = list(function.walk_preorder())
     local_declarations = {node.hash for node in nodes if node.kind.is_declaration()}
     for node in nodes:
+        if node.kind == clang.CursorKind.VAR_DECL and node.storage_class == clang.StorageClass.STATIC:
+            reject("Static local variables retain state across calls and are unsupported", node.location)
         if node.kind in (clang.CursorKind.FUNCTION_DECL, clang.CursorKind.VAR_DECL):
             if node.storage_class == clang.StorageClass.EXTERN or (
                 node.kind == clang.CursorKind.FUNCTION_DECL and node != function
@@ -87,9 +96,9 @@ def process(request):
             "signature": function.result_type.spelling + " " + function.displayname}
 
 
-if __name__ == "__main__":
+def reply_for(request):
     try:
-        reply = process(json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")))
+        reply = process(request)
     except SourceRejected as exc:
         reply = {"error": exc.diagnostic}
     except (ImportError, OSError) as exc:
@@ -100,4 +109,13 @@ if __name__ == "__main__":
             reply = {"error": {"code": "DEPENDENCY_UNAVAILABLE", "message": str(exc)}}
         else:
             raise
-    print(json.dumps(reply))
+    return reply
+
+
+if __name__ == "__main__":
+    if sys.argv[1] == "--serve":
+        for line in sys.stdin:
+            print(json.dumps(reply_for(json.loads(line))), flush=True)
+    else:
+        request = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+        print(json.dumps(reply_for(request)))

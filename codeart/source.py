@@ -15,6 +15,7 @@ from .contracts import (
     Diagnostic, ErrorCode, LexedToken, RunContext, SourceModel, StageError, Token,
     VerificationProfile,
 )
+from ._source_lexer import LexWorker
 from ._verification_process import (
     BuildFailed, BuildSession, CommandTimedOut, DependencyUnavailable, WorkStopped, run_command,
 )
@@ -89,7 +90,10 @@ def _invoke(mode, text, profile, ctx):
             ErrorCode.INTERNAL_ERROR, "analysis", "Clang worker failed",
             details={"stderr": result.stderr, "exit_code": result.returncode},
         ))
-    reply = json.loads(result.stdout)
+    return _check_reply(json.loads(result.stdout))
+
+
+def _check_reply(reply):
     if "error" in reply:
         error = reply["error"]
         raise StageError(Diagnostic(
@@ -163,12 +167,16 @@ def analyze_source(text: str, profile: VerificationProfile | None = None, *, ctx
                        reply["function_name"], reply["signature"], tuple(comments))
 
 
+_join_worker = LexWorker()
+
+
 @lru_cache(maxsize=4096)
 def _can_join_cached(expected, flags, timeout):
     text = "".join(spelling for kind, spelling in expected)
-    profile = VerificationProfile(flags=flags, lex_timeout=timeout)
-    actual = _lex_with_profile(text, profile, RunContext(monotonic() + timeout))
-    return tuple((token.kind, token.spelling) for token in actual) == expected
+    reply = _check_reply(_join_worker.request(
+        {"mode": "lex", "text": text, "flags": list(flags)}, timeout,
+    ))
+    return tuple((token["kind"], token["spelling"]) for token in reply["tokens"]) == expected
 
 
 def can_join(run_tokens, next_token, profile=None):
