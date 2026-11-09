@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from codeart._verification_process import BuildSession, run_command, WorkStopped
+from codeart.procutil import BuildSession, run_command, WorkStopped
 from codeart.contracts import Diagnostic, RunContext, StageError
 from codeart.shapes import FontMetrics, ShapeSpec, SizeRequest, build_mask, geometry_metrics
 from codeart.verification_fixtures import BUILTIN_FIXTURES, select_builtin
@@ -446,7 +446,7 @@ def test_compile_stage_timeout_and_global_deadline(tmp_path):
 
 @requires_clang
 def test_behavior_timeout_marks_case_index(monkeypatch):
-    from codeart._verification_process import CommandTimedOut
+    from codeart.procutil import CommandTimedOut
 
     def execute(*args, **kwargs):
         raise CommandTimedOut("0\n1\n")

@@ -16,7 +16,7 @@ from .contracts import (
     VerificationProfile,
 )
 from ._source_lexer import LexWorker
-from ._verification_process import (
+from .procutil import (
     BuildFailed, BuildSession, CommandTimedOut, DependencyUnavailable, WorkStopped, run_command,
 )
 

@@ -11,7 +11,7 @@ from threading import Lock, Thread
 from time import monotonic
 
 from .contracts import Diagnostic, ErrorCode, StageError
-from ._verification_process import _stop_process
+from .procutil import stop_process
 
 
 class LexWorker:
@@ -24,7 +24,7 @@ class LexWorker:
         process = self._process
         self._process = None
         if process is not None:
-            _stop_process(process)
+            stop_process(process)
             process.wait()
             process.stdin.close()
             process.stdout.close()
@@ -62,7 +62,7 @@ class LexWorker:
                 reply = responses.get(timeout=max(0.0, deadline - monotonic()))
             except Empty as exc:
                 # Kill the child before joining a thread blocked on pipe I/O.
-                _stop_process(process)
+                stop_process(process)
                 process.wait()
                 thread.join()
                 self.close()
@@ -83,7 +83,7 @@ class LexWorker:
             )) from exc
         except BaseException:
             if self._process is not None:
-                _stop_process(self._process)
+                stop_process(self._process)
                 self._process.wait()
             if thread is not None:
                 thread.join()

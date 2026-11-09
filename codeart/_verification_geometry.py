@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 import re
 
-from ._verification_process import check_context
+from .procutil import check_context
 from .shapes import geometry_metrics
 
 

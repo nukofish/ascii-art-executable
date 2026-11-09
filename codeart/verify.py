@@ -7,28 +7,38 @@ from itertools import zip_longest
 from time import monotonic
 
 from ._verification_geometry import check_geometry
-from ._verification_process import (
-    BuildFailed,
-    BuildSession,
-    CommandTimedOut,
-    CompilerInfo,
-    DependencyUnavailable,
-    VerificationContext,
-    WorkStopped,
-    check_context,
-)
 from .contracts import (
     CheckStatus,
+    CompilerInfo,
     Diagnostic,
     ErrorCode,
     LexedToken,
+    RunContext,
     StageError,
     TokenDiff,
     TokenLocation,
     VerificationProfile,
     VerificationReport,
 )
+from .procutil import (
+    BuildFailed,
+    BuildSession,
+    CommandTimedOut,
+    DependencyUnavailable,
+    WorkStopped,
+    check_context,
+)
 from .verification_fixtures import BUILTIN_FIXTURES, FixtureSelection
+
+
+class VerificationContext(RunContext):
+    """Use the shared budget API while preserving E's stop exceptions."""
+
+    def check(self) -> None:
+        try:
+            super().check()
+        except StageError as exc:
+            raise WorkStopped(exc.diagnostic.code.value) from exc
 
 
 class LexingError(Exception):

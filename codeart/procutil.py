@@ -1,4 +1,4 @@
-"""Subprocess and build lifetimes for E's verifier."""
+"""Shared subprocess and temporary build utilities for A and E."""
 
 from __future__ import annotations
 
@@ -11,17 +11,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory, mkdtemp
 from time import monotonic
 
-from .contracts import CompilerInfo, RunContext, StageError
-
-
-class VerificationContext(RunContext):
-    """Use the shared budget API while preserving E's stop exceptions."""
-
-    def check(self) -> None:
-        try:
-            super().check()
-        except StageError as exc:
-            raise WorkStopped(exc.diagnostic.code.value) from exc
+from .contracts import CompilerInfo
 
 
 class WorkStopped(Exception):
@@ -47,7 +37,8 @@ def check_context(ctx) -> None:
         raise WorkStopped("PIPELINE_TIMEOUT")
 
 
-def _stop_process(proc: subprocess.Popen) -> None:
+def stop_process(proc: subprocess.Popen) -> None:
+    """Kill a child started in its own session. The caller reaps it."""
     try:
         if os.name == "posix":
             os.killpg(proc.pid, signal.SIGKILL)
@@ -88,10 +79,10 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
                     stderr.decode("utf-8", errors="replace"),
                 )
         except BaseException:
-            _stop_process(proc)
+            stop_process(proc)
             proc.communicate()
             raise
-        _stop_process(proc)
+        stop_process(proc)
         stdout, _ = proc.communicate()
         check_context(ctx)
         raise CommandTimedOut(stdout.decode("utf-8", errors="replace"))
