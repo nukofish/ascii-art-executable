@@ -1,6 +1,7 @@
 """Run the loopback-only Code Art Studio with python -m codeart.app."""
 
 import argparse
+from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -11,11 +12,11 @@ from uuid import uuid4
 
 from .contracts import (
     Diagnostic, ErrorCode, FontMetrics, GenerationRequest, GenerationResult,
-    GenerationStatus, LayoutOptions, ShapeSpec,
+    GenerationStatus, LayoutOptions, ShapeSpec, PipelineError, RunContext,
 )
 from .environment import environment_info, revision_info
 from .pipeline import generate
-from .prepass import inspect_file, selected_source
+from .prepass import inspect_file, selected_source, PrepassResult
 from .presentation import FONT_ID, describe_prepass_failure, json_value
 from .presentation import artifact_name, describe_result
 from .verification_fixtures import BUILTIN_FIXTURES, select_builtin
@@ -68,7 +69,7 @@ class Jobs:
         self.worker = None
         self.revision = revision_info()
 
-    def submit(self, request, extraction=None):
+    def submit(self, request, extraction=None, *, file_source=None, function=None):
         with self.lock:
             if self.active is not None:
                 raise ValueError("A generation is already running. Finish or cancel it first.")
@@ -78,6 +79,7 @@ class Jobs:
             job = {
                 "id": identifier, "state": "running", "request": request, "prepass": extraction,
                 "cancel": Event(), "result": None, "started": monotonic(), "elapsed_s": None,
+                "file_source": file_source, "function": function,
             }
             self.items[identifier] = job
             self.active = identifier
@@ -86,13 +88,34 @@ class Jobs:
         return identifier
 
     def _run(self, job):
+        request = job["request"]
+        extraction = job["prepass"]
+        ctx = RunContext(job["started"] + request.timeout_s, job["cancel"])
         try:
-            result = self.runner(job["request"], cancel_event=job["cancel"])
+            ctx.check()
+            if job["file_source"] is not None:
+                extraction = inspect_file(job["file_source"], job["function"], ctx=ctx)
+                ctx.check()
+                if not extraction.error:
+                    request = replace(request, source_text=selected_source(extraction), fixtures=None)
+            if extraction is not None and extraction.error:
+                result = GenerationResult(status=GenerationStatus.FAILED)
+            else:
+                remaining = ctx.remaining_s()
+                ctx.check()
+                result = self.runner(
+                    replace(request, timeout_s=remaining), cancel_event=job["cancel"])
+        except PipelineError as exc:
+            result = GenerationResult(diagnostics=[exc.diagnostic])
         except Exception as exc:
             result = GenerationResult(status=GenerationStatus.FAILED, diagnostics=[
                 Diagnostic(ErrorCode.INTERNAL_ERROR, "pipeline", f"{type(exc).__name__}: {exc}")
             ])
         with self.lock:
+            job["request"] = request
+            job["prepass"] = extraction
+            if extraction is not None:
+                job["function"] = extraction.selected or job["function"]
             job["result"] = result
             job["elapsed_s"] = monotonic() - job["started"]
             job["state"] = "finished"
@@ -110,14 +133,27 @@ class Jobs:
             job = self.items.get(identifier)
             if job is None:
                 return None
+            result = None
+            if job["result"] is not None:
+                extraction = job["prepass"]
+                if extraction is not None and extraction.error and not job["result"].diagnostics:
+                    result = describe_prepass_failure(extraction)
+                    result["error"] = extraction.error
+                else:
+                    result = describe_result(job["result"])
+                result["prepass"] = json_value(extraction)
             return {
                 "id": identifier, "state": job["state"], "revision": self.revision,
                 "elapsed_s": job["elapsed_s"],
                 "source": job["request"].source_text,
+                "input_source": (job["file_source"] if job["file_source"] is not None
+                                 else job["request"].source_text),
+                "file_mode": job["file_source"] is not None,
+                "function": job["function"],
                 "shape": job["request"].shape_spec.kind,
                 "scale": job["request"].layout_options.initial_scale,
                 "sample": job["request"].fixtures.fixture.name if job["request"].fixtures else None,
-                "result": ({**describe_result(job["result"]), "prepass": job["prepass"]} if job["result"] is not None else None),
+                "result": result,
             }
 
     def cancel(self, identifier):
@@ -207,24 +243,25 @@ def create_server(port=8765, *, runner=generate):
                 data = json.loads(self.rfile.read(length))
                 if not isinstance(data, dict):
                     raise ValueError("Expected a JSON object")
-                extraction = None
-                if path == "/api/prepass" or data.get("file_mode"):
+                if path == "/api/prepass":
                     if not isinstance(data.get("source"), str):
                         raise ValueError("Expected source text")
                     extraction = inspect_file(data["source"], data.get("function"))
-                    if path == "/api/prepass":
-                        self.respond(200, json_value(extraction))
-                        return
-                    if extraction.error:
-                        failure = describe_prepass_failure(extraction)
-                        failure["revision"] = self.server.jobs.revision
-                        failure["error"] = extraction.error
-                        self.respond(400, failure)
-                        return
-                    data["source"] = selected_source(extraction)
+                    self.respond(200, json_value(extraction))
+                    return
+                file_source = data.get("source") if data.get("file_mode") else None
+                if data.get("file_mode"):
                     data["sample"] = None
                 request = make_request(data)
-                identifier = jobs.submit(request, json_value(extraction))
+                identifier = jobs.submit(
+                    request, file_source=file_source, function=data.get("function"))
+            except PipelineError as exc:
+                failure = describe_prepass_failure(PrepassResult(error=exc.diagnostic.code.value))
+                failure["diagnostics"] = json_value([exc.diagnostic])
+                failure["revision"] = jobs.revision
+                failure["error"] = exc.diagnostic.code.value
+                self.respond(400, failure)
+                return
             except (ValueError, UnicodeError) as exc:
                 self.respond(400, {"error": str(exc)})
                 return

@@ -2,6 +2,19 @@
 from codeart.prepass import inspect_file, selected_source
 
 
+def test_prepass_honors_caller_cancellation():
+    from threading import Event
+    from time import monotonic
+    import pytest
+    from codeart.contracts import ErrorCode, RunContext, StageError
+
+    cancelled = Event()
+    cancelled.set()
+    with pytest.raises(StageError) as failure:
+        inspect_file("int f(void){return 0;}", ctx=RunContext(monotonic() + 30, cancelled))
+    assert failure.value.diagnostic.code == ErrorCode.CANCELLED
+
+
 def test_real_dependencies_and_original_lines():
     text = '#include <stdio.h>\nint g=1;\nint bad(void){return g;}\nint good(int x){return x+1;}\nint main(void){return 0;}\n'
     result = inspect_file(text)
@@ -179,6 +192,9 @@ def test_web_file_mode_generates_extracted_function():
             time.sleep(0.02)
         assert job['result']['prepass']['selected'] == 'f'
         assert job['source'] == 'int f(int x){return x+1;}'
+        assert job['input_source'] == '#include <stdio.h>\nint f(int x){return x+1;}\nint main(void){return 0;}\n'
+        assert job['file_mode'] is True
+        assert job['function'] == 'f'
         assert job['result']['status'] == 'OK'
         assert job['result']['font_id'] == 'Roboto Mono Regular'
         assert job['result']['checks']['token']['status'] == 'PASS'
@@ -203,7 +219,7 @@ def test_web_file_mode_failure_uses_common_report():
     import json
     from threading import Thread
     from urllib.request import Request, urlopen
-    from urllib.error import HTTPError
+    import time
     from codeart.app import create_server
     server = create_server(0)
     worker = Thread(target=server.serve_forever, daemon=True)
@@ -216,22 +232,29 @@ def test_web_file_mode_failure_uses_common_report():
         }).encode()
         request = Request(base + '/api/generate', data=payload,
                           headers={'Content-Type': 'application/json'})
-        try:
-            urlopen(request, timeout=30)
-            raise AssertionError('expected HTTP 400')
-        except HTTPError as exc:
-            assert exc.code == 400
-            data = json.load(exc)
+        with urlopen(request, timeout=5) as response:
+            assert response.status == 202
+            job_id = json.load(response)['id']
+        for _ in range(200):
+            with urlopen(base + '/api/jobs/' + job_id, timeout=5) as response:
+                job = json.load(response)
+            if job['state'] == 'finished':
+                break
+            time.sleep(0.02)
+        assert job['state'] == 'finished'
+        data = job['result']
         assert data['status'] == 'FAILED'
         assert data['error'] == 'NO_ELIGIBLE_FUNCTION'
         assert data['prepass']['error'] == 'NO_ELIGIBLE_FUNCTION'
-        assert 'revision' in data
+        assert 'revision' in job
         assert 'font_id' in data
         assert 'code_fill_ratio' in data
         assert 'code_fill_warning' in data
         for name in ('token', 'geometry', 'compile', 'behavior'):
             assert data['checks'][name]['status'] == 'NOT_RUN'
             assert data['checks'][name]['reason'] == 'NO_ELIGIBLE_FUNCTION'
+        with urlopen(base + '/api/jobs/' + job_id + '/report.json', timeout=5) as response:
+            assert json.load(response)['result'] == data
     finally:
         server.shutdown()
         server.server_close()
