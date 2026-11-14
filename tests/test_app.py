@@ -1,6 +1,7 @@
 """HTTP integration, fixture eligibility, cancellation and result downloads."""
 
 from dataclasses import replace
+from concurrent.futures import ThreadPoolExecutor
 import json
 from threading import Event, Thread
 from time import monotonic, sleep
@@ -156,3 +157,92 @@ def test_reject_foreign_origin_and_missing_result(web_server):
     with pytest.raises(HTTPError) as exc:
         call(base, "/api/jobs/unknown")
     assert exc.value.code == 404
+
+
+def test_file_prepass_is_cancelled_after_job_is_returned(monkeypatch):
+    import codeart.app as app
+    from codeart.prepass import PrepassResult
+
+    entered = Event()
+    release = Event()
+    runner_called = Event()
+
+    def slow_prepass(text, function=None, *, ctx=None):
+        entered.set()
+        while not release.wait(0.01):
+            if ctx is not None:
+                ctx.check()
+        return PrepassResult(error="NO_ELIGIBLE_FUNCTION")
+
+    def runner(request, *, cancel_event):
+        runner_called.set()
+        return GenerationResult()
+
+    monkeypatch.setattr(app, "inspect_file", slow_prepass)
+    server = create_server(0, runner=runner)
+    worker = Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            submitted = pool.submit(call, base, "/api/generate", {
+                "source": "int f(void){return 0;}", "file_mode": True,
+            })
+            try:
+                assert entered.wait(2)
+                data, _ = submitted.result(timeout=2)
+                identifier = json.loads(data)["id"]
+                call(base, f"/api/jobs/{identifier}/cancel", {})
+                job = wait_result(base, identifier)
+                assert job["result"]["status"] == "CANCELLED"
+                assert job["result"]["diagnostics"][0]["code"] == "CANCELLED"
+                assert not runner_called.is_set()
+            finally:
+                release.set()
+    finally:
+        server.shutdown()
+        server.jobs.shutdown()
+        server.server_close()
+        worker.join()
+
+
+def test_file_prepass_shares_generation_budget(monkeypatch):
+    import codeart.app as app
+    from codeart.prepass import FunctionCandidate, PrepassResult
+
+    observed = {}
+    finished = Event()
+    source = "#include <stdio.h>\nint f(void){return 0;}"
+
+    def prepass(text, function=None, *, ctx):
+        observed["context"] = ctx
+        sleep(0.03)
+        return PrepassResult(
+            candidates=[FunctionCandidate("f", 2, 2, "int f(void){return 0;}", "PASS")],
+            selected="f",
+        )
+
+    def runner(request, *, cancel_event):
+        observed["request"] = request
+        observed["cancel_event"] = cancel_event
+        finished.set()
+        return GenerationResult()
+
+    monkeypatch.setattr(app, "inspect_file", prepass)
+    jobs = app.Jobs(runner)
+    try:
+        request = replace(make_request({"source": source}), timeout_s=5)
+        identifier = jobs.submit(request, file_source=source, function="f")
+        assert finished.wait(2)
+        jobs.worker.join(timeout=2)
+        job = jobs.snapshot(identifier)
+        assert observed["context"].cancel_event is observed["cancel_event"]
+        assert 0 < observed["request"].timeout_s < 4.99
+        assert observed["request"].source_text == "int f(void){return 0;}"
+        assert observed["request"].fixtures is None
+        assert job["input_source"] == source
+        assert job["source"] == observed["request"].source_text
+        assert job["file_mode"] is True
+        assert job["function"] == "f"
+    finally:
+        jobs.shutdown()

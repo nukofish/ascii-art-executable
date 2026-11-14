@@ -2,15 +2,18 @@
 
 import argparse
 from dataclasses import replace
+from itertools import combinations
 import json
 from pathlib import Path
 import sys
 
 from ._integration_demo import DEMO_SOURCE, demo_deps
-from .contracts import CheckStatus, FontMetrics, GenerationRequest, GenerationStatus, ShapeSpec
+from .contracts import (
+    CheckStatus, FontMetrics, GenerationRequest, GenerationStatus, PipelineError, ShapeSpec,
+)
 from .environment import revision_info
 from .pipeline import generate
-from .prepass import inspect_file, selected_source, SCOPE
+from .prepass import inspect_file, selected_source, PrepassResult, SCOPE
 from .presentation import json_value
 from .presentation import CHECKS, FONT_ID, LOW_CODE_FILL_WARNING, describe_prepass_failure, describe_result
 from .verification_fixtures import BUILTIN_FIXTURES, select_builtin
@@ -33,19 +36,18 @@ def main(argv=None) -> int:
         parser.error("--function requires --file")
     if not 1 <= args.scale <= 4:
         parser.error("--scale must be between 1 and 4")
-    if args.report is not None:
-        try:
-            report_path = args.report.resolve()
-            for option, path in (("--file", args.file), ("--source", args.source), ("--output", args.output)):
-                if path is None:
-                    continue
-                same_path = report_path == path.resolve()
-                if same_path or (
-                    report_path.exists() and path.exists() and report_path.samefile(path)
-                ):
-                    parser.error(f"--report and {option} must refer to different files")
-        except (OSError, RuntimeError) as exc:
-            parser.exit(2, f"Cannot check report path: {exc}\n")
+    paths = [(option, path) for option, path in (
+        ("--report", args.report), ("--file", args.file),
+        ("--source", args.source), ("--output", args.output),
+    ) if path is not None]
+    try:
+        for (left_option, left), (right_option, right) in combinations(paths, 2):
+            if left.resolve() == right.resolve() or (
+                left.exists() and right.exists() and left.samefile(right)
+            ):
+                parser.error(f"{left_option} and {right_option} must refer to different files")
+    except (OSError, RuntimeError) as exc:
+        parser.exit(2, f"Cannot check file paths: {exc}\n")
     selection = select_builtin(args.sample) if args.sample else None
 
     try:
@@ -53,11 +55,17 @@ def main(argv=None) -> int:
     except (OSError, UnicodeError) as exc:
         parser.exit(2, f"Cannot read source: {exc}\n")
 
-    extraction = inspect_file(source, args.function) if args.file else None
+    prepass_diagnostics = []
+    try:
+        extraction = inspect_file(source, args.function) if args.file else None
+    except PipelineError as exc:
+        extraction = PrepassResult(error=exc.diagnostic.code.value)
+        prepass_diagnostics.append(exc.diagnostic)
     if extraction:
         print(SCOPE, file=sys.stderr)
         if extraction.error:
             data = describe_prepass_failure(extraction)
+            data["diagnostics"] = json_value(prepass_diagnostics)
             data["revision"] = revision_info()
             if args.report:
                 try:
