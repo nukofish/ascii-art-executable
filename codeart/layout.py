@@ -185,6 +185,17 @@ def _layout_limit(history, message: str) -> StageError:
     ))
 
 
+def _invalid_shape(message: str, history=()) -> StageError:
+    """Build an INVALID_SHAPE diagnosis for an unusable injected mask."""
+    return StageError(Diagnostic(
+        ErrorCode.INVALID_SHAPE,
+        "layout",
+        message,
+        details={"attempt_history": tuple(history)},
+        location="Mask.allowed",
+    ))
+
+
 def _with_history(exc: StageError, history) -> StageError:
     """Re-raise a stage error, preserving it but attaching the attempt history."""
     diagnostic = exc.diagnostic
@@ -220,6 +231,9 @@ def _estimate_start_height(
     mask is therefore built and verified, backing off row by row until it is
     in-limit.  The base height is itself in-limit, so the returned height is
     always at least ``base_height_rows`` and never below it.
+
+    A base mask with no fillable cell raises ``INVALID_SHAPE`` before the
+    width/area divisions, rather than a bare ``ZeroDivisionError``.
     """
     base_mask = mask_builder(
         shape_spec, SizeRequest(options.base_height_rows),
@@ -231,6 +245,14 @@ def _estimate_start_height(
         for start, end in row_spans:
             longest_span = max(longest_span, end - start)
             fillable_cells += end - start
+
+    # An injected builder may return a structurally valid mask with no fillable
+    # cell. Guard before the width/area divisions below (which would raise a
+    # bare ZeroDivisionError) and report a structured INVALID_SHAPE instead;
+    # fit_layout attaches the attempt history.
+    if longest_span == 0 or fillable_cells == 0:
+        raise _invalid_shape(
+            "base mask has no fillable cell, so the start size cannot be estimated")
 
     longest_token = max(token.width for token in model.tokens)
     total_width = sum(token.width for token in model.tokens)

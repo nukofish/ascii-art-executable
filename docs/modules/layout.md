@@ -87,6 +87,11 @@ an in-limit size (down to the base height) and only fails if that genuinely
 cannot pack; it never raises `LAYOUT_LIMIT` solely because the estimate was
 out of limit.
 
+If the base mask has no fillable cell (an injected builder returned an empty
+mask), the engine raises `INVALID_SHAPE` before the width and area divisions,
+instead of a bare `ZeroDivisionError`; the diagnostic still carries the
+attempt history.
+
 ## Automatic growth
 
 When an attempt fails, the engine asks the builder for a larger mask. The
@@ -123,7 +128,7 @@ returned in `plan.attempt_history`; on failure they are attached to
 
 ## Tests
 
-`tests/test_layout.py` (25 tests) covers:
+`tests/test_layout.py` (26 tests) covers:
 
 - one placement per token on circle, cat and code; placements stay in bounds,
   on allowed cells, non-overlapping and strictly ordered;
@@ -143,6 +148,8 @@ returned in `plan.attempt_history`; on failure they are attached to
   semicolons) and succeeding instead of raising `LAYOUT_LIMIT`;
 - the column-cap rounding boundary (4x8 base, max_columns=9) backing off
   from a 5x10 over-limit mask to the in-limit 4x8 mask;
+- an empty base mask raising structured `INVALID_SHAPE` with the history
+  instead of a `ZeroDivisionError`;
 - a token that can never fit raising `LAYOUT_LIMIT` with the full history.
 
 ## Known limits

@@ -545,3 +545,29 @@ def test_column_cap_rounding_still_tries_an_in_limit_canvas():
     for placement in plan.placements:
         assert 0 <= placement.row < plan.mask.height
         assert plan.mask.allowed[placement.row][placement.col]
+
+
+def test_empty_base_mask_raises_invalid_shape_with_history():
+    # Regression for an injected builder returning a structurally valid mask
+    # with no fillable cell: the estimate must not divide by zero. It raises a
+    # structured INVALID_SHAPE and still carries the (empty) attempt history.
+    tokens = (Token(0, "identifier", "w", 1, 1, 1),)
+    model = model_for(tokens)
+    options = LayoutOptions(base_height_rows=4)
+
+    def empty_builder(shape_spec, size_request, font_metrics, *, ctx):
+        rows = size_request.height_rows
+        allowed = tuple(tuple(False for _ in range(4)) for _ in range(rows))
+        return Mask(kind="circle", width=4, height=rows, allowed=allowed,
+                    spans=tuple(() for _ in range(rows)),
+                    font_metrics=FontMetrics())
+
+    with pytest.raises(StageError) as exc_info:
+        fit_layout(model, ShapeSpec("circle"), options,
+                   mask_builder=empty_builder, join_checker=always_join, ctx=context())
+
+    diagnostic: Diagnostic = exc_info.value.diagnostic
+    assert diagnostic.code == ErrorCode.INVALID_SHAPE
+    assert diagnostic.stage == "layout"
+    assert "attempt_history" in diagnostic.details
+    assert diagnostic.details["attempt_history"] == ()
