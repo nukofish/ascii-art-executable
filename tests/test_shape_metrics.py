@@ -21,6 +21,7 @@ from codeart import (  # noqa: E402
     SizeRequest,
     build_mask,
     geometry_metrics,
+    hole_boundary_cells,
 )
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "shapes"
@@ -95,6 +96,15 @@ def test_document_schema(rows):
     assert set(document["shapes"]) == set(KINDS)
     assert document["scaling_expectation"]["area_scale_ref_height"] == 32
     assert document["scaling_expectation"]["note"]
+    # v1.5: every named hole carries its exact outline-crossed cell count.
+    cat = document["shapes"]["cat"]["features"]
+    assert set(cat) == set(HOLE_FEATURES)
+    for name, feature in cat.items():
+        assert isinstance(feature["boundary_cells"], int), (rows, name)
+        assert not isinstance(feature["boundary_cells"], bool)
+        assert feature["boundary_cells"] > 0
+    for kind in ("circle", "code"):
+        assert document["shapes"][kind]["features"] == {}
 
 
 # -------------------------------------------------- current implementation --
@@ -127,6 +137,7 @@ def test_fixture_matches_current_implementation(kind, rows):
         got = stats(mask.features[name])
         ref = expected["features"][name]
         assert abs(got["cells"] - ref["cells"]) <= area_tolerance(tol, ref["cells"])
+        assert ref["boundary_cells"] == hole_boundary_cells(mask, name)
         assert got["bbox"] == ref["bbox"]
         assert got["centroid"] == pytest.approx(
             ref["centroid"], abs=tol["centroid_abs_cells"])
@@ -136,6 +147,22 @@ def test_fixture_matches_current_implementation(kind, rows):
         assert expected["ear_gap_rows"] == actual["ear_gap_rows"]
     else:
         assert expected["ear_gap_rows"] is None
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_boundary_cells_scale_with_the_hole_perimeter(kind):
+    """The outline-crossed count grows like the perimeter (~2x per doubling)."""
+    if kind != "cat":
+        return
+    reference = load(32)["shapes"][kind]["features"]
+    for rows in HEIGHTS[1:]:
+        scaled = load(rows)["shapes"][kind]["features"]
+        for name in HOLE_FEATURES:
+            small = reference[name]["boundary_cells"]
+            large = scaled[name]["boundary_cells"]
+            expected = rows / 32
+            ratio = large / small
+            assert abs(ratio - expected) <= 0.35 * expected, (kind, name, rows, small, large)
 
 
 # ------------------------------------------------------- scaling invariant --

@@ -136,9 +136,82 @@ bbox: {cols, rows, ratio},                 # ratio = cols*cell_aspect/rows
 allowed_cells, spans_total, rows_with_multiple_spans,
 eye_cells: {left, right}, nose_cells,
 ear_gap_rows,                             # dip between the ear tips, in rows
+boundary_cells: {eye_left, eye_right, nose},  # v1.5 outline-crossed cell counts
 holes: [{cells, centroid: {row, col}}],   # interior holes only
 code_stroke_cells
 ```
+
+### Ear notch (`ear_gap_rows`, plan v1.5)
+
+`ear_gap_rows` is the dip between the two ear peaks. The v1.5 plan
+("统一验收清单——耳峰凹陷定义") replaced the v1.4 rule — global peak row plus
+the single column between the rasterised apex centroids — with:
+
+1. **two independent peaks**: the left peak is the highest fillable row of
+   `features["ear_left"]`, the right peak the same for `ear_right`, so a
+   trimmed tip on one ear cannot hide the other peak;
+2. **a fixed central window**: the notch bottom is the lowest upper-boundary
+   cell inside the columns `[start, end)` with
+   `end - start = max(NOTCH_MIN_WINDOW_CELLS, round(width * NOTCH_WINDOW_FRACTION))`
+   centred on `width * NOTCH_CENTER_FRACTION`;
+3. **the lower peak is the reference**: depth is
+   `notch_bottom - max(left_peak, right_peak)`, so a raised (trimmed) ear can
+   only shrink the dip, never be compensated by the other ear.
+
+Public constants (importable from `codeart` and `codeart.shapes`):
+
+| constant | default | meaning |
+|---|---|---|
+| `NOTCH_CENTER_FRACTION` | `0.5` | window centre as a fraction of the mask width |
+| `NOTCH_WINDOW_FRACTION` | `0.02` | window width as a fraction of the mask width |
+| `NOTCH_MIN_WINDOW_CELLS` | `3` | the window is never narrower than three columns |
+
+The window is deliberately narrow: the notch floor is flat only over the
+central band (at 128 rows the cells at the notch row span `|u| <= 0.026`, about
+2.6 % of the width), so a wider window would sample the head's shoulders and
+add rows purely from resolution instead of measuring the dip.
+`ear_notch_rows(mask, *, center_fraction=..., window_fraction=...)` exposes the
+same computation for callers that want to vary the window.
+
+v1.5 regression case: remove three cells from the h32 left ear tip. The peaks
+become rows 1 (left) and 0 (right), the central upper boundary is row 5, and
+the depth is `5 - 1 = 4`. v1.4 returned `0` there because the left ear owned no
+cell on the global peak row; the asymmetric case is pinned by
+`test_ear_notch_survives_a_trimmed_ear_tip`. Symmetric masks keep the v1.4
+values (5 / 10 / 15 / 20 at h32/h64/h96/h128), because the window stays on the
+flat notch floor.
+
+### Hole boundary cells (`boundary_cells`, plan v1.5)
+
+`hole_boundary_cells(mask, hole)` returns the number of grid cells the
+**analytic outline** of `hole` (`eye_left`, `eye_right`, `nose`) crosses — the
+exact quantisation bound of a centre-sampled hole, not an area formula.
+
+Algorithm:
+
+- the hole is the ellipse in `HOLE_ELLIPSES` (`(cx, cy, rx, ry)`, in the same
+  normalised `(u, v)` space the mask is rasterised in);
+- the grid comes from the mask: cell edges are at
+  `u = (col - width/2) * 2*aspect/rows` and `v = row * 2/rows - 1`;
+- a cell counts when the outline enters it through one of its four sides: each
+  side is a segment and is tested for an ellipse intersection by solving
+  `A t² + B t + C = 0` for `t ∈ [0, 1]` — no corner sampling, no tolerance;
+- a cell whose four corners are all inside (or all outside) is *not* counted,
+  even when the outline grazes it, because the outline does not pass through a
+  side.
+
+Measured values (also stored per hole in `metrics_h*.json`):
+
+| hole | h32 | h64 | h96 | h128 |
+|---|---|---|---|---|
+| eye (each) | 31 | 63 | 95 | 125 |
+| nose | 14 | 30 | 46 | 62 |
+
+Part E approximated this bound with `max(0.02*A, 4*sqrt(A), 2)`. The exact
+count is what that approximation stood in for: for a hole rasterised by
+cell-centre sampling the area error *is* the number of outline-crossed cells,
+so it can be used directly as the per-hole tolerance. The formula stays valid
+as a fallback for callers that only know the area.
 
 ## Scaled reference data for verification
 
@@ -181,7 +254,7 @@ Per-shape record:
 | `rows_with_multiple_spans` | rows split by at least one hole |
 | `features` | named eye/nose holes only; `{}` for `circle` and `code` |
 | `hole_count` | number of named hole features: `3` for `cat`, `0` otherwise |
-| `ear_gap_rows` | cat only: rows between the ear peaks; `null` otherwise |
+| `ear_gap_rows` | cat only: rows between the lower ear peak and the fixed-window notch bottom; `null` otherwise |
 
 Each feature is:
 
@@ -190,6 +263,7 @@ Each feature is:
 | `cells` | number of cells in the feature (the `A_ref` below) |
 | `bbox` | inclusive `[min_row, min_col, max_row, max_col]` |
 | `centroid` | `[row, col]` in **cell-centre** coordinates (`index + 0.5`) |
+| `boundary_cells` | v1.5: grid cells crossed by the hole's analytic outline (exact area-quantisation bound) |
 
 ### Tolerance contract
 
@@ -265,7 +339,7 @@ cells must exceed `area_limit`.
 |---|---|---|
 | eye cells | each ≥ 4 | 43 / 43 |
 | nose cells | ≥ 2 | 10 |
-| ear dip between peaks | ≥ 2 rows | 5 |
+| ear dip between peaks | ≥ 2 rows | 5 (unchanged by the v1.5 window) |
 | circle bbox ratio | 1.0 ± 0.05 | 1.000 |
 | determinism | two calls identical | yes (dataclass equality) |
 | scaling 32 → 64 | eye area ×~4, geometry preserved | 43 → 163 (×3.79), nose 10 → 34, dip 5 → 10 |
@@ -307,11 +381,11 @@ handing C a canvas it could never fill.
 ## Running the tests
 
 ```bash
-python -m pytest tests/test_shapes.py -q     # 35 passed
+python -m pytest tests/test_shapes.py -q     # 44 passed
 ```
 
 The suite covers all three shapes at 32 and 64 rows, span reconstruction,
 holes-not-allowed, multi-span rows, the acceptance metrics above, determinism,
 the derived `cell_aspect`/`scale` contracts, the `INVALID_SHAPE` /
-`INVALID_SIZE` error codes, the empty-mask guard, the `ctx` duck-typing hook
-and the fixture regression.
+`INVALID_SIZE` error codes, the empty-mask guard, the `ctx` duck-typing hook, the v1.5 asymmetric-ear case, the exact
+hole-boundary-cell counts and the fixture regression.

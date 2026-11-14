@@ -32,6 +32,7 @@
       "features": {
         "eye_left": {
           "cells": 43,
+          "boundary_cells": 31,
           "bbox": [
             13,
             16,
@@ -45,6 +46,7 @@
         },
         "eye_right": {
           "cells": 43,
+          "boundary_cells": 31,
           "bbox": [
             13,
             37,
@@ -58,6 +60,7 @@
         },
         "nose": {
           "cells": 10,
+          "boundary_cells": 14,
           "bbox": [
             20,
             29,

@@ -133,3 +133,113 @@ PY=/tmp/bchkvenv/bin/python bash docs/reports/b_shapes/run_b_evidence.sh
 # per-check numbers -> B_checks.txt
 /tmp/bchkvenv/bin/python docs/reports/b_shapes/B_checks.py
 ```
+
+## v1.5 更新（2026-11-14，复查第 9、10 项）
+
+分支 `part-b/v15-ear-notch-and-boundary-cells`，base `origin/main@dc689f2`。只改 B 的范围：
+`codeart/shapes.py`、`codeart/__init__.py`（B 的公开导出）、`scripts/gen_shape_metrics.py`、
+`tests/fixtures/shapes/metrics_h*.json`、`tests/test_shapes.py`、`tests/test_shape_metrics.py`、
+`docs/modules/shapes*.md`、本报告。`codeart/verification_regression.py` **未改**（E 的消费端，
+由 E 另开 PR 切换）。
+
+### 9. 耳峰凹陷按计划定义重算
+
+**旧规则（v1.4）**：取两耳全局最高行 `peak_row = min(r for r, _ in ears)`，再取两个耳尖在
+`peak_row` 上的列质心中点作为正中列，凹陷 = `top[mid] - peak_row`。左耳顶端缺 3 格时，左耳
+在全局最高行没有顶点，`left_apex` 为空，凹陷直接返回 0。
+
+**新规则（v1.5《统一验收清单——耳峰凹陷定义》）**，实现为
+`codeart.shapes.ear_notch_rows(mask, *, center_fraction=..., window_fraction=...)`：
+
+1. 左右耳**分别**求峰：`min(row)` over `ear_left` / `ear_right`；
+2. 在**固定中央窗口** `[start, end)` 内取上边界最低行（每列第一条可填行，取最大行号）；
+   窗口宽 `max(NOTCH_MIN_WINDOW_CELLS, round(width * NOTCH_WINDOW_FRACTION))`，以
+   `width * NOTCH_CENTER_FRACTION` 居中；
+3. 深度 = `中央最低行 - max(左峰, 右峰)`，即相对**较低**的那只耳峰。
+
+公开常量：`NOTCH_CENTER_FRACTION = 0.5`、`NOTCH_WINDOW_FRACTION = 0.02`、
+`NOTCH_MIN_WINDOW_CELLS = 3`（`codeart` 与 `codeart.shapes` 均可导入）。`geometry_metrics`
+的字段名仍是 `ear_gap_rows`，值按新定义计算。
+
+**不对称复现用例**（h32，左耳顶端去掉 3 格：
+`tests/test_shapes.py::test_ear_notch_survives_a_trimmed_ear_tip`）：
+
+| 项 | 行号 |
+|---|---|
+| 左耳峰 | 1 |
+| 右耳峰 | 0 |
+| 中央窗口上边界最低 | 5 |
+| 新 `ear_gap_rows` | `5 - max(1, 0)` = **4** |
+| 旧 `ear_gap_rows` | **0**（回归） |
+
+**对称模板新旧值**：
+
+| 高度 | 旧 `ear_gap_rows` | 新 `ear_gap_rows` | 差异 | fixture |
+|---|---|---|---|---|
+| 32 | 5 | 5 | 0 | `metrics_h32.json` 中不变 |
+| 64 | 10 | 10 | 0 | `metrics_h64.json` 中不变 |
+| 96 | 15 | 15 | 0 | `metrics_h96.json` 中不变 |
+| 128 | 20 | 20 | 0 | `metrics_h128.json` 中不变 |
+
+窗口为什么取 2%（至少 3 列）：凹陷底部只在中央一小段是平的——128 行时，与凹陷底同一行的格
+只覆盖 `|u| <= 0.026`，约为宽度的 2.6%。窗口再宽就会量到头顶的**斜坡**而不是凹陷：按
+`window_fraction = 0.2`（±10% 宽）试算，四档会变成 **5 / 11 / 16 / 22**，多出来的行完全
+来自分辨率，而且会让 E 现有的 `ear_gap_rows == 20` 参考断言（`tests/test_verification_cli.py`）
+失败。因此窗口上限取 0.02，并加 `NOTCH_MIN_WINDOW_CELLS = 3` 保证最小高度下也不是单列；
+对称模板的新值与旧值一致，不对称用例由「分别求峰 + 取较低峰」修复。
+
+### 10. 孔洞边界格 fixture（`boundary_cells`）
+
+`codeart.shapes.hole_boundary_cells(mask, hole)`：孔洞用 `HOLE_ELLIPSES` 里的解析椭圆
+（`(cx, cy, rx, ry)`，与 mask 同一归一化 `(u, v)` 空间），网格边在
+`u = (col - width/2) * 2*aspect/rows`、`v = row * 2/rows - 1`；**轮廓从格的四条边之一穿过**
+才计数（四条边各作线段，解 `A t² + B t + C = 0` 求 `t ∈ [0, 1]` 的交点），四角全在内/全在外
+的格不计。不是面积近似，也没有角点采样容差。
+
+`scripts/gen_shape_metrics.py` 为每个孔洞额外输出 `boundary_cells`（整数），
+`geometry_metrics()["boundary_cells"]` 也带同一组值。
+
+| 孔洞 | h32 | h64 | h96 | h128 |
+|---|---|---|---|---|
+| eye_left / eye_right（每只） | 31 | 63 | 95 | 125 |
+| nose | 14 | 30 | 46 | 62 |
+
+**与复查文档对照值核对**（32/64/128）：
+
+| 孔洞 | 文档 | 实测 | 结论 |
+|---|---|---|---|
+| 眼 32 | 31 | 31 | 一致 |
+| 眼 64 | 63 | 63 | 一致 |
+| 眼 128 | 125 | 125 | 一致 |
+| 鼻 32 | 14 | 14 | 一致 |
+| 鼻 64 | 30 | 30 | 一致 |
+| 鼻 128 | 62 | 62 | 一致 |
+
+六项全部一致，没有需要 E 裁决的口径差异。h96 文档没给对照值，实测眼 95、鼻 46。
+
+**与旧近似公式的关系**：E 之前用 `max(0.02*A, 4*sqrt(A), 2)` 估计面积容差。格中心采样的孔洞
+面积误差**就是**轮廓穿过的格数，因此 `boundary_cells` 是那条公式想表达的精确值；公式保留为
+只有面积信息时的兜底。E 尚未切换：`codeart/verification_regression.py` 仍用公式
+（h128 眼 `boundary_cells` 容差 104.919016 不变），本 PR 不碰它。
+
+### 实测命令与结果
+
+```sh
+/tmp/bv15venv/bin/python -m pytest -q
+# 351 passed in 31.65s        （基线 338，新增 13 个用例）
+
+/tmp/bv15venv/bin/python -m scripts.run_verification --output-dir /tmp/bv15-evidence-v15
+# PASS fixed matrix (144/144 comparisons) | /tmp/bv15-evidence-v15/report.json
+# Scaled cat: 1x PASS, 2x PASS, 4x PASS
+
+/tmp/bv15venv/bin/python scripts/gen_shape_metrics.py   # 连跑两次
+sha256sum tests/fixtures/shapes/metrics_h*.json
+# 两次运行的四个 sha256 完全一致，见下表
+```
+
+| fixture | sha256（修改后，两次生成一致） |
+|---|---|
+| `metrics_h32.json` | `2112e66b27d60602573e6b7bd5e07493cb2f5180820c46712463f4a7cdcdd258` |
+| `metrics_h64.json` | `98b008bcd7fdc324d2d659d7aa3b09da7c6742535a91ae401303641e336d4b12` |
+| `metrics_h96.json` | `158bce92bee52b6ac834399eff34488f08ec8b7aebd7bcc8ead8fee61318e5c6` |
+| `metrics_h128.json` | `0d19fc541e6adaee47a4db7a9ff06a9f760dbf636f313ab1a5d29845511fa9d9` |

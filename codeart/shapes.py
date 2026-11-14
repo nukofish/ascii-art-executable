@@ -38,13 +38,19 @@ from typing import Iterable, Mapping, Sequence
 __all__ = [
     "CELL_ASPECT_DEFAULT",
     "CELL_ASPECT_TOLERANCE",
+    "HOLE_ELLIPSES",
+    "NOTCH_CENTER_FRACTION",
+    "NOTCH_MIN_WINDOW_CELLS",
+    "NOTCH_WINDOW_FRACTION",
     "FontMetrics",
     "Mask",
     "ShapeError",
     "ShapeSpec",
     "SizeRequest",
     "build_mask",
+    "ear_notch_rows",
     "geometry_metrics",
+    "hole_boundary_cells",
 ]
 
 #: Fixed cell aspect ratio: ``cell_width_px / cell_height_px`` (see plan v1.4).
@@ -52,6 +58,23 @@ CELL_ASPECT_DEFAULT = 0.5
 
 #: Absolute tolerance accepted for a caller-supplied cell aspect ratio.
 CELL_ASPECT_TOLERANCE = 1e-9
+
+#: Centre of the fixed central window used to measure the ear notch, as a
+#: fraction of the mask width (plan v1.5, "统一验收清单——耳峰凹陷定义").
+#: ``0.5`` is the middle column of the mask.
+NOTCH_CENTER_FRACTION = 0.5
+
+#: Width of that fixed central window, as a fraction of the mask width.
+#: The notch floor is flat only over a narrow central band: at 128 rows the
+#: cell row equal to the notch bottom spans ``|u| <= 0.026``, i.e. ~2.6 % of
+#: the width.  A wider window starts sampling the head's shoulders and adds
+#: rows purely from resolution, so the fraction is kept inside that band.
+NOTCH_WINDOW_FRACTION = 0.02
+
+#: Minimum notch-window width in columns.  Three columns keep the measurement
+#: off a single hand-picked column even at the smallest mask heights, where
+#: ``round(width * NOTCH_WINDOW_FRACTION)`` alone would select just one.
+NOTCH_MIN_WINDOW_CELLS = 3
 
 #: Normalised units spanned by the full mask height (``v ∈ [-1, 1]``).
 _SHAPE_V_SPAN = 2.0
@@ -326,6 +349,15 @@ _CAT_EARS = (
 _CAT_EYES = ((-0.33, -0.02, 0.17, 0.15), (0.33, -0.02, 0.17, 0.15))
 _CAT_NOSE = (0.0, 0.30, 0.09, 0.06)
 
+#: Analytic outlines of the cat's three holes, ``(cx, cy, rx, ry)`` in the same
+#: normalised ``(u, v)`` space the mask is rasterised in (``v = -1`` is the top
+#: edge).  :func:`hole_boundary_cells` intersects these outlines with the grid.
+HOLE_ELLIPSES: Mapping[str, tuple[float, float, float, float]] = {
+    "eye_left": _CAT_EYES[0],
+    "eye_right": _CAT_EYES[1],
+    "nose": _CAT_NOSE,
+}
+
 
 def _shape_ratio(kind: str) -> float:
     """Physical width/height ratio ``r`` used by ``columns = ceil(rows*r/aspect)``."""
@@ -583,6 +615,167 @@ def _holes(mask: Mask) -> list[dict]:
     return holes
 
 
+def _notch_window(
+    cols: int,
+    center_fraction: float,
+    window_fraction: float,
+) -> tuple[int, int]:
+    """Half-open column range ``[start, end)`` of the fixed notch window."""
+    width = max(NOTCH_MIN_WINDOW_CELLS, int(round(cols * window_fraction)))
+    start = int(round(cols * center_fraction - width / 2.0))
+    start = min(max(start, 0), cols - 1)
+    return start, min(cols, start + width)
+
+
+def ear_notch_rows(
+    mask: Mask,
+    *,
+    center_fraction: float = NOTCH_CENTER_FRACTION,
+    window_fraction: float = NOTCH_WINDOW_FRACTION,
+) -> int:
+    """Rows between the lower ear peak and the notch bottom (plan v1.5).
+
+    Definition, from the v1.5 *统一验收清单——耳峰凹陷定义*:
+
+    1. the **left** ear peak is the highest fillable row of the left ear
+       (``min(row for row, _ in mask.features["ear_left"])``) and the **right**
+       peak is the same for the right ear — the two ears are measured
+       independently, so trimming one tip cannot hide the other peak;
+    2. the **notch bottom** is the lowest point of the upper silhouette inside
+       a *fixed* central column window: ``start <= col < end`` with
+       ``end - start = max(3, round(cols * window_fraction))`` columns centred
+       on ``cols * center_fraction`` (defaults: the central 2 % of the width,
+       never fewer than 3 columns).
+       For every column in the window the upper boundary is the first fillable
+       row; the notch bottom is the largest such row (the deepest sag);
+    3. the depth is ``notch_bottom - max(left_peak, right_peak)`` — measured
+       against the **lower** of the two peaks, so a raised (trimmed) ear can
+       never inflate the dip.
+
+    The fixed window replaces the v1.4 single column between the rasterised
+    apex centroids: that column was derived from the *global* minimum row, so
+    an ear whose tip was missing had no apex there and the dip came out as 0.
+
+    Returns ``0`` for a mask without both ear features, or when the window has
+    no fillable cell.
+    """
+    left = mask.features.get("ear_left")
+    right = mask.features.get("ear_right")
+    if not left or not right:
+        return 0
+    start, end = _notch_window(mask.width, center_fraction, window_fraction)
+    top = [
+        next((r for r in range(mask.height) if mask.allowed[r][c]), None)
+        for c in range(start, end)
+    ]
+    filled = [r for r in top if r is not None]
+    if not filled:
+        return 0
+    lower_peak = max(
+        min(r for r, _ in left),
+        min(r for r, _ in right),
+    )
+    return max(filled) - lower_peak
+
+
+def _segment_crosses_ellipse(
+    p: tuple[float, float],
+    q: tuple[float, float],
+    ellipse: Sequence[float],
+) -> bool:
+    """Does the segment ``p -> q`` intersect the ellipse *outline*?
+
+    Solves ``A t² + B t + C = 0`` for the parameter ``t ∈ [0, 1]`` of the
+    segment; ``A == 0`` (a degenerate segment) can never cross an outline.
+    """
+    cx, cy, rx, ry = ellipse
+    (ax, ay), (bx, by) = p, q
+    dx, dy = bx - ax, by - ay
+    a = (dx / rx) ** 2 + (dy / ry) ** 2
+    if a == 0.0:
+        return False
+    b = 2.0 * ((ax - cx) * dx / rx ** 2 + (ay - cy) * dy / ry ** 2)
+    c = ((ax - cx) / rx) ** 2 + ((ay - cy) / ry) ** 2 - 1.0
+    disc = b * b - 4.0 * a * c
+    if disc < 0.0:
+        return False
+    root = math.sqrt(disc)
+    return any(
+        0.0 <= t <= 1.0
+        for t in ((-b - root) / (2.0 * a), (-b + root) / (2.0 * a))
+    )
+
+
+def _contour_cells(cols: int, rows: int, aspect: float, ellipse: Sequence[float]) -> int:
+    """Cells whose four edges the analytic ``ellipse`` outline crosses."""
+    cx, cy, rx, ry = ellipse
+    # Inverse of ``_cell_uv``: cell index range covered by the ellipse, plus a
+    # one-cell margin so no crossing cell can fall outside the scan.
+    u_to_col = rows / (2.0 * aspect)
+    v_to_row = rows / 2.0
+    col_lo = math.floor((cx - rx) * u_to_col + cols / 2.0 - 0.5) - 1
+    col_hi = math.ceil((cx + rx) * u_to_col + cols / 2.0 - 0.5) + 1
+    row_lo = math.floor((cy - ry + 1.0) * v_to_row - 0.5) - 1
+    row_hi = math.ceil((cy + ry + 1.0) * v_to_row - 0.5) + 1
+    du = aspect * 2.0 / rows
+    dv = 2.0 / rows
+    count = 0
+    for row in range(max(0, row_lo), min(rows, row_hi + 1)):
+        v0 = row * dv - 1.0
+        v1 = v0 + dv
+        for col in range(max(0, col_lo), min(cols, col_hi + 1)):
+            u0 = (col - cols / 2.0) * du
+            u1 = u0 + du
+            corners = ((u0, v0), (u1, v0), (u1, v1), (u0, v1))
+            if any(
+                _segment_crosses_ellipse(corners[i], corners[(i + 1) % 4], ellipse)
+                for i in range(4)
+            ):
+                count += 1
+    return count
+
+
+def hole_boundary_cells(mask: Mask, hole: str) -> int:
+    """Number of grid cells the analytic outline of ``hole`` crosses (v1.5).
+
+    ``hole`` is one of ``eye_left`` / ``eye_right`` / ``nose``; its outline is
+    the ellipse in :data:`HOLE_ELLIPSES`, in the same normalised ``(u, v)``
+    space the mask is rasterised in.
+
+    Algorithm (exact, not an area approximation):
+
+    * the cell grid is derived from the mask itself, so the cell edges are at
+      ``u = (col - cols/2) * 2*aspect/rows`` and ``v = row * 2/rows - 1``;
+    * a cell counts when **the outline enters it through one of its four
+      edges**: every side is a segment and is tested against the ellipse
+      outline with the quadratic solve in :func:`_segment_crosses_ellipse`
+      (corner sampling, no centre-distance tolerance);
+    * a cell whose four corners are all inside (or all outside) is *not*
+      counted, even when the outline grazes it: the outline does not pass
+      through a side, so the cell is not on the quantisation ring.
+
+    A centre-sampled hole loses exactly the cells the outline cuts, so this
+    count is the natural per-hole area bound; Part E used to approximate it
+    with ``max(0.02*A, 4*sqrt(A), 2)`` before this exact value existed.
+
+    Raises ``PipelineError(INVALID_SHAPE)`` for a non-cat mask or an unknown
+    hole name.
+    """
+    if mask.kind != "cat":
+        raise _error(
+            ErrorCode.INVALID_SHAPE,
+            f"hole boundary cells are defined for the cat shape, got {mask.kind!r}",
+            "Mask.kind")
+    try:
+        ellipse = HOLE_ELLIPSES[hole]
+    except KeyError:
+        raise _error(
+            ErrorCode.INVALID_SHAPE,
+            f"unknown cat hole {hole!r}; expected one of {tuple(HOLE_ELLIPSES)}",
+            "Mask.features") from None
+    return _contour_cells(mask.width, mask.height, mask.font_metrics.cell_aspect, ellipse)
+
+
 def geometry_metrics(mask: Mask) -> dict:
     """Return the measurable geometry of ``mask`` (consumed by the verifier)."""
     rows, cols = mask.height, mask.width
@@ -597,26 +790,11 @@ def geometry_metrics(mask: Mask) -> dict:
     eye_right = len(mask.features.get("eye_right", ()))
     nose = len(mask.features.get("nose", ()))
 
-    ear_gap_rows = 0
-    ears = mask.features.get("ears")
-    if ears:
-        # top_row[c] = first fillable row in column c (None if the column is empty)
-        top_row = []
-        for c in range(cols):
-            top_row.append(next((r for r in range(rows) if mask.allowed[r][c]), None))
-        peak_row = min(r for r, _ in ears)
-        left = mask.features.get("ear_left", frozenset())
-        right = mask.features.get("ear_right", frozenset())
-        left_apex = {c for r, c in left if r == peak_row}
-        right_apex = {c for r, c in right if r == peak_row}
-        if left_apex and right_apex:
-            # The dip between the peaks is measured on the centre line between
-            # the two ear tips (the sag between the ears), not over the whole
-            # gap — the ears slope outward, so their bases would mask the dip.
-            mid = round((sum(left_apex) / len(left_apex)
-                         + sum(right_apex) / len(right_apex)) / 2)
-            if 0 <= mid < cols and top_row[mid] is not None:
-                ear_gap_rows = top_row[mid] - peak_row
+    ear_gap_rows = ear_notch_rows(mask)
+    boundary_cells = (
+        {name: hole_boundary_cells(mask, name) for name in HOLE_ELLIPSES}
+        if mask.kind == "cat" else {}
+    )
 
     return {
         "kind": mask.kind,
@@ -634,6 +812,7 @@ def geometry_metrics(mask: Mask) -> dict:
         "eye_cells": {"left": eye_left, "right": eye_right},
         "nose_cells": nose,
         "ear_gap_rows": ear_gap_rows,
+        "boundary_cells": boundary_cells,
         "holes": _holes(mask),
         "code_stroke_cells": len(mask.features.get("code_strokes", ())),
     }

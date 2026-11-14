@@ -118,9 +118,67 @@ bbox: {cols, rows, ratio},                 # ratio = cols*cell_aspect/rows
 allowed_cells, spans_total, rows_with_multiple_spans,
 eye_cells: {left, right}, nose_cells,
 ear_gap_rows,                             # 两个耳尖之间的凹陷行数
+boundary_cells: {eye_left, eye_right, nose},  # v1.5：与轮廓相交的格数
 holes: [{cells, centroid: {row, col}}],   # 只统计内部孔洞
 code_stroke_cells
 ```
+
+### 耳峰凹陷（`ear_gap_rows`，v1.5 计划）
+
+`ear_gap_rows` 是两个耳峰之间的凹陷。v1.5《统一验收清单——耳峰凹陷定义》把 v1.4 的
+「全局最高行 + 两个耳尖质心之间的单列」改成：
+
+1. **左右耳分别求峰**：左峰是 `features["ear_left"]` 的最高可填行，右峰同理取
+   `ear_right`——一侧耳尖被削掉时，不会因此看不见另一侧的峰；
+2. **固定中央区域**：凹陷底取中央列窗口 `[start, end)` 内**上边界最低**的格，其中
+   `end - start = max(NOTCH_MIN_WINDOW_CELLS, round(width * NOTCH_WINDOW_FRACTION))`，
+   窗口以 `width * NOTCH_CENTER_FRACTION` 为中心；
+3. **以较低耳峰为基准**：深度 = `凹陷底行 - max(左峰, 右峰)`，所以被削高的耳朵只会让
+   凹陷变浅，不会被另一侧"补"回来。
+
+公开常量（`codeart` 与 `codeart.shapes` 均可导入）：
+
+| 常量 | 默认 | 含义 |
+|---|---|---|
+| `NOTCH_CENTER_FRACTION` | `0.5` | 窗口中心，占 mask 宽度的比例 |
+| `NOTCH_WINDOW_FRACTION` | `0.02` | 窗口宽度，占 mask 宽度的比例 |
+| `NOTCH_MIN_WINDOW_CELLS` | `3` | 窗口至少三列宽 |
+
+窗口刻意取窄：凹陷底部只在中央一小段是平的（128 行时，凹陷所在行的格覆盖
+`|u| <= 0.026`，约为宽度的 2.6%），窗口再宽就会量到头顶的斜坡，把分辨率带来的行差
+当成凹陷。`ear_notch_rows(mask, *, center_fraction=..., window_fraction=...)` 把同一
+计算公开出来，需要时可以直接调不同窗口。
+
+v1.5 复现用例：把 h32 左耳顶端去掉 3 格后，左、右峰分别是第 1、0 行，中央上边界在第 5
+行，深度 = `5 - 1 = 4`。v1.4 在那里返回 0，因为左耳在全局最高行没有顶点；该不对称用例由
+`test_ear_notch_survives_a_trimmed_ear_tip` 固定。对称模板的数值与 v1.4 一致
+（h32/h64/h96/h128 分别为 5 / 10 / 15 / 20），因为窗口仍落在凹陷底部的平段上。
+
+### 孔洞边界格（`boundary_cells`，v1.5 计划）
+
+`hole_boundary_cells(mask, hole)` 返回给定孔洞（`eye_left`、`eye_right`、`nose`）的
+**解析轮廓**与网格相交的格数——它是格中心采样孔洞面积的精确量化上界，不是面积近似公式。
+
+算法：
+
+- 孔洞就是 `HOLE_ELLIPSES` 里的椭圆（`(cx, cy, rx, ry)`，与 mask 光栅化用的归一化
+  `(u, v)` 同一坐标系）；
+- 网格来自 mask 本身：格边在 `u = (col - width/2) * 2*aspect/rows`、
+  `v = row * 2/rows - 1`；
+- 只要轮廓从格的**某一条边**穿进该格就计数：四条边各是一段线段，用二次方程
+  `A t² + B t + C = 0` 求 `t ∈ [0, 1]` 的交点，不做角点采样、不设容差；
+- 四角全在轮廓内（或全在外）的格不计数，即使轮廓与它相切——因为轮廓没有穿过任何一条边。
+
+实测值（同时按孔洞写进 `metrics_h*.json`）：
+
+| 孔洞 | h32 | h64 | h96 | h128 |
+|---|---|---|---|---|
+| 眼（每只） | 31 | 63 | 95 | 125 |
+| 鼻 | 14 | 30 | 46 | 62 |
+
+E 之前用 `max(0.02*A, 4*sqrt(A), 2)` 近似这个上界。精确格数正是那条公式想表达的量：
+格中心采样的面积误差就等于轮廓穿过的格数，所以可以直接当作每个孔洞的面积容差；只有面积
+信息时，公式仍可作为兜底。
 
 ## 供验收使用的放大参考数据
 
@@ -159,7 +217,7 @@ python scripts/gen_shape_metrics.py
 | `rows_with_multiple_spans` | 被至少一个孔洞切成多段的行数 |
 | `features` | 只含命名的眼/鼻洞；`circle` 与 `code` 为 `{}` |
 | `hole_count` | 命名孔洞特征数：`cat` 为 `3`，其余为 `0` |
-| `ear_gap_rows` | 仅 `cat`：两个耳尖之间的凹陷行数；其余为 `null` |
+| `ear_gap_rows` | 仅 `cat`：较低耳峰到固定窗口凹陷底的行数；其余为 `null` |
 
 每个 feature：
 
@@ -168,6 +226,7 @@ python scripts/gen_shape_metrics.py
 | `cells` | 该特征的格数（即下文的 `A_ref`） |
 | `bbox` | 闭区间 `[min_row, min_col, max_row, max_col]` |
 | `centroid` | `[row, col]`，采用**格中心**坐标（下标 + 0.5） |
+| `boundary_cells` | v1.5：该孔洞解析轮廓穿过的格数（面积量化误差的精确上界） |
 
 ### 容差口径
 
@@ -232,7 +291,7 @@ assert abs(got - expected) <= limit  # 371 vs 387，limit 78.7
 |---|---|---|
 | 每只眼格数 | ≥ 4 | 43 / 43 |
 | 鼻子格数 | ≥ 2 | 10 |
-| 耳峰间凹陷 | ≥ 2 行 | 5 |
+| 耳峰间凹陷 | ≥ 2 行 | 5（v1.5 换窗口后不变） |
 | 圆 bbox 比 | 1.0 ± 0.05 | 1.000 |
 | 确定性 | 两次调用完全相同 | 是（dataclass 相等） |
 | 32 → 64 放大 | 眼面积约 ×4、几何保持 | 43 → 163（×3.79），鼻 10 → 34，凹陷 5 → 10 |
@@ -270,9 +329,9 @@ except PipelineError as exc:
 ## 跑测试
 
 ```bash
-python -m pytest tests/test_shapes.py -q     # 35 passed
+python -m pytest tests/test_shapes.py -q     # 44 passed
 ```
 
 覆盖：三种图案在 32/64 行生成、spans 重建一致性、孔洞不可填、多区间行、上面的验收指标、
 确定性、`cell_aspect`/`scale` 的推导契约、`INVALID_SHAPE` / `INVALID_SIZE` 错误码、空 mask 守卫、
-`ctx` 鸭子类型钩子，以及 fixture 回归。
+`ctx` 鸭子类型钩子、v1.5 不对称耳尖用例、精确的孔洞边界格数，以及 fixture 回归。
