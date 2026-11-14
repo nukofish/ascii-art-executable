@@ -45,8 +45,8 @@ HEAD, branch, dirty flag and base commit.
 
 ## Results
 
-Snapshot: HEAD `90ce252914e176acfe895a1e8e5b9074b174681c`, branch
-`part-d/evidence-refresh` (dirty: `no`), base `main@90ce252`.
+Snapshot: HEAD `fb6628f43df6261dc1ddeabc70cd8754b0d4fd1b`, branch
+`part-d/evidence-final` (dirty: `no`), base `main@fb6628f`.
 
 | metric | result |
 |---|---|
@@ -73,7 +73,7 @@ Snapshot: HEAD `90ce252914e176acfe895a1e8e5b9074b174681c`, branch
 
 ## Artifacts
 
-- `docs/reports/part-d/2026-11-11_main/case_<function>_<shape>_h<rows>_s<scale>.c` and `.log`
-- `docs/reports/part-d/2026-11-11_main/D_manifest.csv`
-- `docs/reports/part-d/2026-11-11_main/D_cases.md`
+- `docs/reports/part-d/2026-11-14_final/case_<function>_<shape>_h<rows>_s<scale>.c` and `.log`
+- `docs/reports/part-d/2026-11-14_final/D_manifest.csv`
+- `docs/reports/part-d/2026-11-14_final/D_cases.md`
 - `docs/reports/D_checklist.md` (summary)

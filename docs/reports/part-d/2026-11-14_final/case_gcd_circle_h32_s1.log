@@ -1,0 +1,13 @@
+head: fb6628f43df6261dc1ddeabc70cd8754b0d4fd1b
+branch: part-d/evidence-final dirty: no
+case: gcd_circle (32 rows, scale 1)
+token: PASS
+geometry: PASS
+compile: PASS
+behavior: NOT_RUN (NO_FIXTURE)
+coverage: 0.9944 (token 0.0453, block 0.0000, line 0.9491)
+comment_cells: {'block': 0, 'line': 1530}
+attempts: 1
+clang -c rc: 0
+diagnostics: -
+stderr: 
