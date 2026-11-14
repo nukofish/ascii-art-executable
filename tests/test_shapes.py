@@ -15,13 +15,18 @@ import pytest  # noqa: E402
 
 from codeart import (  # noqa: E402
     CELL_ASPECT_TOLERANCE,
+    NOTCH_CENTER_FRACTION,
+    NOTCH_MIN_WINDOW_CELLS,
+    NOTCH_WINDOW_FRACTION,
     FontMetrics,
     Mask,
     ShapeError,
     ShapeSpec,
     SizeRequest,
     build_mask,
+    ear_notch_rows,
     geometry_metrics,
+    hole_boundary_cells,
 )
 from codeart import shapes  # noqa: E402
 from codeart.contracts import ErrorCode, PipelineError, StageError  # noqa: E402
@@ -111,6 +116,100 @@ def test_cat_features_meet_acceptance():
         assert metrics["nose_cells"] >= 2
         assert metrics["ear_gap_rows"] >= 2, metrics["ear_gap_rows"]
         assert len(metrics["holes"]) == 3          # two eyes + nose
+
+
+# ------------------------------------------- v1.5 notch and boundary cells --
+
+def _mask_without_cells(mask: Mask, cells) -> Mask:
+    """Copy of ``mask`` with ``cells`` removed from both grid and features."""
+    drop = set(cells)
+    allowed = [list(row) for row in mask.allowed]
+    for row, col in drop:
+        allowed[row][col] = False
+    features = {name: set(value) - drop for name, value in mask.features.items()}
+    return Mask(
+        kind=mask.kind,
+        width=mask.width,
+        height=mask.height,
+        allowed=tuple(tuple(row) for row in allowed),
+        spans=shapes._spans_from_rows(allowed),
+        font_metrics=mask.font_metrics,
+        features={name: frozenset(value) for name, value in features.items()},
+    )
+
+
+def test_notch_window_is_a_public_fixed_central_region():
+    assert NOTCH_CENTER_FRACTION == 0.5
+    assert NOTCH_MIN_WINDOW_CELLS == 3
+    assert 0.0 < NOTCH_WINDOW_FRACTION < 0.1
+    for cols in (64, 128, 192, 256):
+        start, end = shapes._notch_window(cols, NOTCH_CENTER_FRACTION,
+                                          NOTCH_WINDOW_FRACTION)
+        assert 0 <= start < end <= cols
+        assert end - start >= NOTCH_MIN_WINDOW_CELLS
+        assert abs((start + end) / 2.0 - cols / 2.0) <= 1.0
+
+
+def test_ear_notch_survives_a_trimmed_ear_tip():
+    """v1.5 reproduction: h32 with three cells removed from the left ear tip.
+
+    The peaks then sit at rows 1 (left) and 0 (right) while the central upper
+    boundary is row 5.  The v1.4 rule (global peak row + single mid column)
+    returned 0 because the left ear owned no cell on the global peak row; the
+    plan-defined depth is ``5 - max(1, 0) = 4``.
+    """
+    mask = make("cat", 32)
+    tip = sorted(cell for cell in mask.features["ear_left"] if cell[0] == 0)
+    assert len(tip) == 3
+    trimmed = _mask_without_cells(mask, tip)
+    assert min(row for row, _ in trimmed.features["ear_left"]) == 1
+    assert min(row for row, _ in trimmed.features["ear_right"]) == 0
+    assert geometry_metrics(trimmed)["ear_gap_rows"] == 4
+    assert ear_notch_rows(trimmed) == 4
+
+
+def test_ear_notch_uses_the_lower_peak_and_a_fixed_window():
+    """A trimmed tip lowers the reference peak by exactly one row."""
+    mask = make("cat", 32)
+    assert ear_notch_rows(mask) == 5
+    tip = sorted(cell for cell in mask.features["ear_left"] if cell[0] == 0)
+    trimmed = _mask_without_cells(mask, tip)
+    # One row of the *lower* peak is what changed: 5 - 1, not 5 - 0.
+    assert ear_notch_rows(trimmed) == ear_notch_rows(mask) - 1
+
+
+def test_ear_notch_rows_is_zero_without_ears():
+    assert ear_notch_rows(make("circle", 32)) == 0
+    assert ear_notch_rows(make("code", 32)) == 0
+
+
+@pytest.mark.parametrize(
+    "rows, expected",
+    ((32, (31, 31, 14)), (64, (63, 63, 30)), (96, (95, 95, 46)), (128, (125, 125, 62))),
+)
+def test_hole_boundary_cells_cross_the_analytic_outline(rows, expected):
+    """Exact outline-crossed cells for the three cat holes (plan v1.5)."""
+    mask = make("cat", rows)
+    left, right, nose = expected
+    assert hole_boundary_cells(mask, "eye_left") == left
+    assert hole_boundary_cells(mask, "eye_right") == right
+    assert hole_boundary_cells(mask, "nose") == nose
+    assert geometry_metrics(mask)["boundary_cells"] == {
+        "eye_left": left, "eye_right": right, "nose": nose,
+    }
+
+
+def test_boundary_cells_are_geometry_only_and_scale_with_the_perimeter():
+    """The count comes from the ellipse and the grid, not from ``allowed``."""
+    small = hole_boundary_cells(make("cat", 32), "eye_left")
+    large = hole_boundary_cells(make("cat", 64), "eye_left")
+    assert 1.5 <= large / small <= 2.5           # perimeter grows ~2x per doubling
+    with pytest.raises(PipelineError) as info:
+        hole_boundary_cells(make("circle", 32), "nose")
+    assert info.value.diagnostic.code == ErrorCode.INVALID_SHAPE
+    with pytest.raises(PipelineError) as info:
+        hole_boundary_cells(make("cat", 32), "tail")
+    assert info.value.diagnostic.code == ErrorCode.INVALID_SHAPE
 
 
 def test_circle_bbox_ratio():

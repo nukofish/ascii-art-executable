@@ -4,7 +4,13 @@
 The fixtures under ``tests/fixtures/shapes/metrics_h<rows>.json`` are derived
 from the live mask implementation in :mod:`codeart.shapes`.  Nothing in the
 JSON is hand-written: every number comes from ``build_mask`` /
-``geometry_metrics`` for the three supported shapes at 32, 64, 96 and 128 rows.
+``geometry_metrics`` (and, for the cat's holes, ``hole_boundary_cells``) for
+the three supported shapes at 32, 64, 96 and 128 rows.
+
+Each named hole also carries ``boundary_cells``: the exact number of grid
+cells the analytic outline crosses (plan v1.5), i.e. the area quantisation
+error of a centre-sampled hole outlined in cells rather than a
+``max(0.02*A, 4*sqrt(A), 2)`` estimate.
 
 ``h32``/``h64``/``h128`` are the heights of Part E's scaled cat acceptance set
 (``32 * scale`` for ``scale in (1, 2, 4)``); ``h96`` is kept alongside them for
@@ -38,6 +44,7 @@ from codeart.shapes import (  # noqa: E402
     SizeRequest,
     build_mask,
     geometry_metrics,
+    hole_boundary_cells,
 )
 
 #: 32/64/128 are Part E's scaled cat acceptance heights (32 * scale for
@@ -67,19 +74,23 @@ TOLERANCE = {
 SCALING_NOTE = "面积按 (h/32)^2 缩放；位置按 h/32 缩放；bbox_ratio 与 h 无关"
 
 
-def _feature_entry(cells) -> dict:
+def _feature_entry(cells, boundary_cells: int) -> dict:
     """Summarise one feature cell set.
 
     ``bbox`` is inclusive ``[min_row, min_col, max_row, max_col]``.
     ``centroid`` uses cell-centre coordinates (index + 0.5), so that the
     centroid scales exactly with ``height_rows`` instead of carrying the
     half-cell bias of raw indices.
+    ``boundary_cells`` is the exact count of grid cells whose edges the hole's
+    analytic outline crosses (v1.5); it is the per-hole quantisation bound E
+    used to approximate with ``max(0.02*A, 4*sqrt(A), 2)``.
     """
     count = len(cells)
     rows = [row for row, _ in cells]
     cols = [col for _, col in cells]
     return {
         "cells": count,
+        "boundary_cells": boundary_cells,
         "bbox": [min(rows), min(cols), max(rows), max(cols)],
         "centroid": [
             round(sum(row + 0.5 for row in rows) / count, 3),
@@ -97,7 +108,10 @@ def _shape_entry(kind: str, rows: int) -> dict:
     for name in HOLE_FEATURES:
         cells = mask.features.get(name)
         if cells:
-            features[name] = _feature_entry(cells)
+            features[name] = _feature_entry(
+                cells,
+                hole_boundary_cells(mask, name) if kind == "cat" else 0,
+            )
 
     return {
         "cols": metrics["cols"],
