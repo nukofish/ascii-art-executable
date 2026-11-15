@@ -140,24 +140,24 @@ def _check_tokens(model, rendered, profile, ctx, report):
     return None
 
 
-def _compile(builds, mode, source, wrapper, profile, ctx, report, stage):
+def _compile(builds, mode, source, wrapper, profile, ctx, report):
     try:
         if report.compiler is None:
             report.compiler = builds.compiler_info(profile, ctx)
         return builds.build(mode, source, wrapper, compiler=report.compiler, ctx=ctx,
                             timeout=profile.compile_timeout)
     except DependencyUnavailable as exc:
-        _skip(report, stage, ErrorCode.DEPENDENCY_UNAVAILABLE, str(exc))
+        _skip(report, "compile", ErrorCode.DEPENDENCY_UNAVAILABLE, str(exc))
     except CommandTimedOut:
-        setattr(report, f"{stage}_status", CheckStatus.FAIL)
+        report.compile_status = CheckStatus.FAIL
         report.diagnostics.append(Diagnostic(
-            ErrorCode.COMPILE_TIMEOUT, stage, "Compilation exceeded its time budget",
+            ErrorCode.COMPILE_TIMEOUT, "compile", "Compilation exceeded its time budget",
             details={"build": mode},
         ))
     except BuildFailed as exc:
-        setattr(report, f"{stage}_status", CheckStatus.FAIL)
+        report.compile_status = CheckStatus.FAIL
         report.diagnostics.append(Diagnostic(
-            ErrorCode.COMPILE_FAILED, stage, str(exc),
+            ErrorCode.COMPILE_FAILED, "compile", str(exc),
             details={"build": mode, "exit_code": exc.result.returncode,
                      "stderr": exc.result.stderr},
         ))
@@ -206,13 +206,20 @@ def _run_behavior(builds, mode, program, fixture, profile, ctx, report):
     return values
 
 
-def _check_behavior(builds, fixture, source, profile, ctx, report):
-    results = []
+def _build_behavior_programs(builds, fixture, source, profile, ctx, report):
+    programs = {}
     wrapper = fixture.wrapper()
     for mode, text in (("original", fixture.source), ("rendered", source)):
-        program = _compile(builds, mode, text, wrapper, profile, ctx, report, "behavior")
+        program = _compile(builds, mode, text, wrapper, profile, ctx, report)
         if program is None:
-            return
+            return None
+        programs[mode] = program
+    return programs
+
+
+def _check_behavior(builds, fixture, programs, profile, ctx, report):
+    results = []
+    for mode, program in programs.items():
         values = _run_behavior(builds, mode, program, fixture, profile, ctx, report)
         if values is None:
             return
@@ -251,6 +258,11 @@ def verify(model, plan, rendered, fixtures, profile, *, ctx) -> VerificationRepo
     try:
         with _stage(report, stage, ctx):
             tokens = _check_tokens(model, rendered, profile, ctx, report)
+        if report.token_status == CheckStatus.FAIL:
+            report.skip_reasons.update(
+                geometry="TOKEN_NOT_PASS", compile="TOKEN_NOT_PASS", behavior="TOKEN_NOT_PASS",
+            )
+            return report
 
         stage = "geometry"
         with _stage(report, stage, ctx):
@@ -274,27 +286,36 @@ def verify(model, plan, rendered, fixtures, profile, *, ctx) -> VerificationRepo
 
         stage = "compile"
         fixture = _selected_fixture(model, fixtures)
+        behavior_skip_reason = None
+        if report.geometry_status != CheckStatus.PASS:
+            behavior_skip_reason = "GEOMETRY_NOT_PASS"
+        elif fixture is None:
+            behavior_skip_reason = "NO_FIXTURE"
+        elif plan.mask.width * plan.mask.height > profile.max_behavior_cells:
+            behavior_skip_reason = "OUTPUT_TOO_LARGE"
         shared = fixtures._builds if fixture is not None else None
         session = nullcontext(shared) if shared is not None else BuildSession()
+        programs = None
         with session as builds:
             with _stage(report, stage, ctx):
                 artifact = _compile(builds, "object", rendered.source_text, "", profile,
-                                    ctx, report, stage)
+                                    ctx, report)
                 if artifact is not None:
-                    report.compile_status = CheckStatus.PASS
+                    if behavior_skip_reason is None:
+                        programs = _build_behavior_programs(
+                            builds, fixture, rendered.source_text, profile, ctx, report,
+                        )
+                    if behavior_skip_reason is not None or programs is not None:
+                        report.compile_status = CheckStatus.PASS
 
             stage = "behavior"
             if report.compile_status != CheckStatus.PASS:
                 report.skip_reasons[stage] = "COMPILE_NOT_PASS"
-            elif report.geometry_status != CheckStatus.PASS:
-                report.skip_reasons[stage] = "GEOMETRY_NOT_PASS"
-            elif fixture is None:
-                report.skip_reasons[stage] = "NO_FIXTURE"
-            elif plan.mask.width * plan.mask.height > profile.max_behavior_cells:
-                report.skip_reasons[stage] = "OUTPUT_TOO_LARGE"
+            elif behavior_skip_reason is not None:
+                report.skip_reasons[stage] = behavior_skip_reason
             else:
                 with _stage(report, stage, ctx):
-                    _check_behavior(builds, fixture, rendered.source_text, profile, ctx, report)
+                    _check_behavior(builds, fixture, programs, profile, ctx, report)
     except (StageError, WorkStopped) as exc:
         diagnostic = (exc.diagnostic if isinstance(exc, StageError)
                       else Diagnostic(ErrorCode(exc.reason), stage, str(exc)))

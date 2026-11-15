@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from codeart.procutil import BuildSession, run_command, WorkStopped
+from codeart.procutil import BuildFailed, BuildSession, CommandTimedOut, run_command, WorkStopped
 from codeart.contracts import Diagnostic, RunContext, StageError
 from codeart.shapes import FontMetrics, ShapeSpec, SizeRequest, build_mask, geometry_metrics
 from codeart.verification_fixtures import BUILTIN_FIXTURES, select_builtin
@@ -183,9 +183,10 @@ def run(case, *, fixture=None, selected_profile=None, ctx=None):
 def test_fake_reports_are_injectable():
     expected = {
         "pass": ("PASS", "PASS", "PASS", "PASS"),
-        "token_mismatch": ("FAIL", "PASS", "NOT_RUN", "NOT_RUN"),
+        "token_mismatch": ("FAIL", "NOT_RUN", "NOT_RUN", "NOT_RUN"),
         "hole_leakage": ("PASS", "FAIL", "PASS", "NOT_RUN"),
         "compiler_unavailable": ("PASS", "PASS", "NOT_RUN", "NOT_RUN"),
+        "wrapper_compile_failure": ("PASS", "PASS", "FAIL", "NOT_RUN"),
     }
     for name, values in expected.items():
         stub = make_verifier_stub(name)
@@ -220,8 +221,10 @@ def test_token_changes_return_first_difference(before, after, expected, actual):
     model, plan, rendered = make_case(source, "f")
     changed = rendered.source_text.replace(before, after, 1)
     report = run((model, plan, replace(rendered, source_text=changed)))
-    assert report.token_status == CheckStatus.FAIL, report.diagnostics
-    assert report.compile_status == report.behavior_status == CheckStatus.NOT_RUN
+    assert statuses(report) == ("FAIL", "NOT_RUN", "NOT_RUN", "NOT_RUN"), report.diagnostics
+    assert report.skip_reasons == dict.fromkeys(("geometry", "compile", "behavior"), "TOKEN_NOT_PASS")
+    assert report.geometry_metrics == {}
+    assert set(report.durations) == {"token"}
     assert ErrorCode.TOKEN_MISMATCH in diagnostics(report)
     assert report.first_diff.expected.spelling == expected
     assert report.first_diff.expected.line == 1
@@ -445,9 +448,49 @@ def test_compile_stage_timeout_and_global_deadline(tmp_path):
 
 
 @requires_clang
-def test_behavior_timeout_marks_case_index(monkeypatch):
-    from codeart.procutil import CommandTimedOut
+@pytest.mark.parametrize("failed_build", ("original", "rendered"))
+@pytest.mark.parametrize("code", (ErrorCode.COMPILE_FAILED, ErrorCode.COMPILE_TIMEOUT))
+def test_wrapper_build_failure_skips_behavior(monkeypatch, failed_build, code):
+    builds = []
+    executions = []
 
+    def build(self, mode, source, wrapper, **kwargs):
+        builds.append(mode)
+        if mode == failed_build:
+            if code == ErrorCode.COMPILE_TIMEOUT:
+                raise CommandTimedOut("")
+            raise BuildFailed(subprocess.CompletedProcess([CLANG], 1, "", "wrapper build failed"))
+        return self.root / mode
+
+    def execute(self, program, **kwargs):
+        executions.append(program)
+        return subprocess.CompletedProcess([str(program)], 0, "0\n" * 8, "")
+
+    monkeypatch.setattr(BuildSession, "build", build)
+    monkeypatch.setattr(BuildSession, "execute", execute)
+    fixture = select_builtin("max2")
+    report = run(make_case(fixture.fixture.source, "max2"), fixture=fixture)
+
+    assert statuses(report) == ("PASS", "PASS", "FAIL", "NOT_RUN"), report.diagnostics
+    assert report.skip_reasons == {"behavior": "COMPILE_NOT_PASS"}
+    expected_builds = ["object", "original"]
+    if failed_build == "rendered":
+        expected_builds.append("rendered")
+    assert builds == expected_builds
+    assert not executions
+    assert report.behavior_cases_compared == 0
+    assert set(report.durations) == {"token", "geometry", "compile"}
+    [diagnostic] = report.diagnostics
+    assert diagnostic.code == code
+    assert diagnostic.stage == "compile"
+    assert diagnostic.details["build"] == failed_build
+    if code == ErrorCode.COMPILE_FAILED:
+        assert diagnostic.details["exit_code"] == 1
+        assert diagnostic.details["stderr"] == "wrapper build failed"
+
+
+@requires_clang
+def test_behavior_timeout_marks_case_index(monkeypatch):
     def execute(*args, **kwargs):
         raise CommandTimedOut("0\n1\n")
 
