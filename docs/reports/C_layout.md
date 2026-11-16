@@ -13,11 +13,22 @@ the `Commit` column names the real change rather than the base.
   (real-dimension verification), opened as PR #40 and merged into main via
   `ce45ce`. They implement the v1.5 P0 initial size estimation, including the
   row-cap and column-cap boundaries.
-- **This round (open, not merged):** branch `layout-empty-mask-guard`, based on
-  upstream/main `fb6628f`, adding the empty-base-mask guard (P2). The public
+- **Empty-base-mask guard (merged):** tested commit `1c41149`, based on
+  upstream/main `fb6628f`, adding the empty-base-mask guard (P2). Opened as
+  PR #43 and merged into main via `6527f4d` on 14 November 2026. The public
   `contracts.py` signatures are unchanged.
 
-Test date is 12 November 2026 in Asia/Hong_Kong.
+Test date is 15 November 2026 in Asia/Hong_Kong.
+
+## Merge status
+
+| Change | Tested commit | PR | Merge commit | Merged | Main tip at re-check |
+| --- | --- | --- | --- | --- | --- |
+| Initial size estimate (P0) | `423c939` + `1976f93` | #40 | `ce45ce` | yes | `f36a779` |
+| Empty-base-mask guard (P2) | `1c41149` | #43 | `6527f4d` | yes | `f36a779` |
+
+`6527f4d` is a merge of `fb6628f` and `1c41149`, so its tree equals the tested
+commit's tree; no conflict resolution was applied.
 
 ## Environment and workspace state
 
@@ -27,15 +38,27 @@ locally; they report `DEPENDENCY_UNAVAILABLE` and are validated by the CI
 (libclang 18.1.1). The C-owned `tests/test_layout.py` does not depend on
 libclang and runs fully here. See `C_environment.json`.
 
-At test time the layout change was committed on the branch and the working tree
-was otherwise clean (`git status` reported only the branch's own changes before
-commit; no unrelated file was modified).
+At the tested commit the working tree was clean (`git status` reported no
+modified file), so the run reflects exactly `1c41149`.
 
-The full suite on this machine is `112 failed, 196 passed, 31 skipped`. The
-112 failing tests are the same environment set as the baseline (missing
-libclang, Windows symlink privilege, CRLF), confirmed by an empty
-`Compare-Object` diff; no new regression. The new passing test is the
-empty-mask regression.
+At the tested commit the full suite is `112 failed, 196 passed, 31 skipped`.
+The 112 failing tests are the same environment set as the baseline (missing
+libclang, Windows symlink privilege, stale fixtures), and the only new passing
+test is the empty-mask regression.
+
+## Re-check against current main
+
+Layout code did not move after the merge: `codeart/layout.py`,
+`tests/test_layout.py` and `codeart/contracts.py` have identical git blob
+SHAs at `1c41149` and at the current main tip `f36a779`. B's `shapes.py` did
+change (#45), and the layout tests build masks through it, so the suite was
+re-run on a clean copy of `f36a779`:
+
+- `python -m pytest tests/test_layout.py -q` -> `26 passed`.
+- Full suite -> `111 failed, 209 passed, 31 skipped`. The failing set is a
+  subset of the tested commit's environment set: the only difference is
+  `test_shape_metrics.py::test_generator_is_idempotent_and_fixtures_are_current`,
+  which #45 fixed by refreshing the fixtures. No new failure.
 
 ## The implemented decisions
 
@@ -54,8 +77,8 @@ divisions, rather than a bare `ZeroDivisionError`.
 
 | Tested change | Input | Command | Expected | Actual | Evidence | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| 423c939 + 1976f93 (PR #40) | C-owned suite | `python -m pytest tests/test_layout.py -q` | All layout tests pass | 26 passed | C_tests.txt | PASS |
-| this branch (base fb6628f) | Empty 4x4 mask, injected builder | `test_empty_base_mask_raises_invalid_shape_with_history` | No division by zero; structured INVALID_SHAPE with empty history | INVALID_SHAPE, stage layout, history () | C_tests.txt | PASS |
+| 1c41149 (PR #43, merge 6527f4d) | C-owned suite | `python -m pytest tests/test_layout.py -q` | All layout tests pass | 26 passed | C_tests.txt | PASS |
+| 1c41149 (PR #43, merge 6527f4d) | Empty 4x4 mask, injected builder | `test_empty_base_mask_raises_invalid_shape_with_history` | No division by zero; structured INVALID_SHAPE with empty history | INVALID_SHAPE, stage layout, history () | C_tests.txt | PASS |
 | 423c939 (PR #40) | 4x8 canvas, 24 semicolons | `test_out_of_limit_estimate_still_tries_an_in_limit_canvas` | Estimate wants 5 rows but is verified/clamped to scale 1; tokens fit in 4 rows | 1 attempt, h=4, 24 placements | C_tests.txt | PASS |
 | 1976f93 (PR #40) | 4x8 base, max_columns=9, 24 semicolons | `test_column_cap_rounding_still_tries_an_in_limit_canvas` | Continuous clamp (9/8=1.125) rounds to a 5x10 over-limit mask; back off to the in-limit 4x8 mask | 1 attempt, h=4, w=8, 24 placements | C_tests.txt | PASS |
 | 423c939 (PR #40) | Width-12 token, circle h=4 | `test_longest_token_gets_a_large_enough_start_via_estimate` | Width estimate (L/U=1.5) moves first attempt to h=6 | 1 attempt, h=6, 12-cell span, geometry PASS | C_tests.txt | PASS |

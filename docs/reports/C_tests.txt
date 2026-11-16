@@ -1,5 +1,5 @@
-﻿============================= test session starts =============================
-platform win32 -- Python 3.13.16, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\allen\AppData\Roaming\LarkShell\sandbox_runtime\bases\772984f6fd3a8ae0d2422cd7c2bfa\python\python.exe
+============================= test session starts =============================
+platform win32 -- Python 3.13.16, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\allen\AppData\Roaming\LarkShell\sandbox_runtime\bases\772984f6fd3a8ae0ae7d2422cd7c2bfa\python\python.exe
 cachedir: .pytest_cache
 rootdir: D:\university\year1semA\python\project\c_Allen_C 后端与主力填充引擎\ascii-art-contracts
 collecting ... collected 26 items
@@ -22,7 +22,7 @@ tests/test_layout.py::test_layout_stage_timeout_raises_layout_timeout PASSED [ 5
 tests/test_layout.py::test_layout_timeout_is_shared_across_retries PASSED [ 61%]
 tests/test_layout.py::test_mask_building_respects_layout_stage_budget PASSED [ 65%]
 tests/test_layout.py::test_elapsed_time_includes_token_packing PASSED    [ 69%]
-tests/test_layout.py::test_separator_resets_the_contiguous_run PASSED [ 73%]
+tests/test_layout.py::test_separator_resets_the_contiguous_run PASSED    [ 73%]
 tests/test_layout.py::test_actual_scale_reflects_rounded_height PASSED   [ 76%]
 tests/test_layout.py::test_code_mask_packs_tokens_across_many_short_spans PASSED [ 80%]
 tests/test_layout.py::test_longest_token_gets_a_large_enough_start_via_estimate PASSED [ 84%]
@@ -31,4 +31,13 @@ tests/test_layout.py::test_out_of_limit_estimate_still_tries_an_in_limit_canvas 
 tests/test_layout.py::test_column_cap_rounding_still_tries_an_in_limit_canvas PASSED [ 96%]
 tests/test_layout.py::test_empty_base_mask_raises_invalid_shape_with_history PASSED [100%]
 
-============================= 26 passed in 0.48s =============================
+============================= 26 passed in 0.52s ==============================
+
+=== re-check on current main tip f36a779 (clean copy of the upstream archive) ===
+repo: nukofish-ascii-art-executable-f36a779
+
+platform win32 -- Python 3.13.16, pytest-9.2.0, pluggy-1.7.0 -- C:\Users\allen\AppData\Roaming\LarkShell\sandbox_runtime\bases\772984f6fd3a8ae0ae7d2422cd7c2bfa\python\python.exe
+============================= 26 passed in 0.53s ==============================
+
+full suite:
+111 failed, 209 passed, 31 skipped in 18.40s
