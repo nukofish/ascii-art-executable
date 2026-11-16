@@ -39,7 +39,9 @@ Tests can inject substitutes through the pipeline dependencies.
 - **Token.** E lexes the full generated source and compares the effective
   tokens after dropping comments. The first difference gives a zero-based
   index and the original spelling and source position on each side. A side
-  that has reached the end is represented by `None`.
+  that has reached the end is represented by `None`. A token failure leaves
+  geometry, compilation, and behavior at `NOT_RUN (TOKEN_NOT_PASS)`. A missing
+  lexer or a lexer stage timeout still allows the independent geometry check.
 - **Geometry.** E scans the actual characters to check boundaries, holes,
   protected cells, placements, comment fill rules, and D's position and
   cell counts. Coverage divides nonblank characters in fillable cells by
@@ -48,8 +50,11 @@ Tests can inject substitutes through the pipeline dependencies.
   outside the mask, and in holes. Hole leakage also counts toward the
   out-of-bounds total.
 - **Compile.** After the token check passes, E runs an object build using
-  `-std=c11 -pedantic-errors` by default. It reports compilation independently
-  of the geometry result.
+  `-std=c11 -pedantic-errors` by default, even if geometry fails. When geometry
+  passes and the input qualifies for behavior testing, the compile stage also
+  builds the original and generated executables with the test wrapper. A build
+  failure or compile timeout sets `compile_status=FAIL` and leaves behavior at
+  `NOT_RUN (COMPILE_NOT_PASS)`. The diagnostic identifies the failed build.
 - **Behavior.** E runs comparisons after the first three checks pass.
   Without a matching fixture, the result is `NOT_RUN (NO_FIXTURE)`. With a
   matching fixture and more than 100,000 canvas cells, it is
@@ -109,7 +114,7 @@ indices.
 python3 -m pytest -q tests/test_shapes.py tests/test_verify.py
 ```
 
-F can inject the four report fixtures in
+F can inject the report fixtures in
 `tests/fixtures/verification_reports.py`. E's isolated matrix uses real B
 masks, test layouts, and a Clang raw lexer adapter. `tests/test_source.py`
 also runs 18 production pipeline cases. The acceptance command runs the

@@ -166,9 +166,10 @@ def test_failed_or_cancelled_result_is_not_verified(status):
 
 @pytest.mark.parametrize(("case", "checks", "status"), [
     ("pass", {"token": "PASS", "geometry": "PASS", "compile": "PASS", "behavior": "PASS"}, "OK"),
-    ("token_mismatch", {"token": "FAIL", "geometry": "PASS", "compile": "NOT_RUN", "behavior": "NOT_RUN"}, "FAILED"),
+    ("token_mismatch", {"token": "FAIL", "geometry": "NOT_RUN", "compile": "NOT_RUN", "behavior": "NOT_RUN"}, "FAILED"),
     ("hole_leakage", {"token": "PASS", "geometry": "FAIL", "compile": "PASS", "behavior": "NOT_RUN"}, "FAILED"),
     ("compiler_unavailable", {"token": "PASS", "geometry": "PASS", "compile": "NOT_RUN", "behavior": "NOT_RUN"}, "FAILED"),
+    ("wrapper_compile_failure", {"token": "PASS", "geometry": "PASS", "compile": "FAIL", "behavior": "NOT_RUN"}, "FAILED"),
 ])
 def test_e_verifier_stubs_flow_through_f(request_data, case, checks, status):
     result = pipeline.generate(

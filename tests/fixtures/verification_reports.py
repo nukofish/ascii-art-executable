@@ -15,10 +15,7 @@ def _pass():
 
 
 def _token_mismatch():
-    report = _pass()
-    report.token_status = CheckStatus.FAIL
-    report.compile_status = report.behavior_status = CheckStatus.NOT_RUN
-    report.behavior_cases_compared = 0
+    report = VerificationReport(token_status=CheckStatus.FAIL)
     report.first_diff = TokenDiff(
         7, TokenLocation("numeric_constant", "0", 2, 12),
         TokenLocation("numeric_constant", "1", 8, 16), "KIND_OR_SPELLING",
@@ -26,7 +23,9 @@ def _token_mismatch():
     report.diagnostics.append(Diagnostic(
         ErrorCode.TOKEN_MISMATCH, "token", "Effective token sequence changed", 8, 16,
     ))
-    report.skip_reasons.update(compile="TOKEN_NOT_PASS", behavior="TOKEN_NOT_PASS")
+    report.skip_reasons.update(
+        geometry="TOKEN_NOT_PASS", compile="TOKEN_NOT_PASS", behavior="TOKEN_NOT_PASS",
+    )
     return report
 
 
@@ -54,10 +53,24 @@ def _compiler_unavailable():
     return report
 
 
+def _wrapper_compile_failure():
+    return VerificationReport(
+        token_status=CheckStatus.PASS, geometry_status=CheckStatus.PASS,
+        compile_status=CheckStatus.FAIL,
+        geometry_metrics={"out_of_bounds_cells": 0, "hole_leakage_cells": 0},
+        diagnostics=[Diagnostic(
+            ErrorCode.COMPILE_FAILED, "compile", "Compiler returned a nonzero exit status",
+            details={"build": "rendered", "exit_code": 1, "stderr": "wrapper build failed"},
+        )],
+        skip_reasons={"behavior": "COMPILE_NOT_PASS"},
+    )
+
+
 def make_verifier_stub(case):
     factory = {
         "pass": _pass, "token_mismatch": _token_mismatch,
         "hole_leakage": _hole_leakage, "compiler_unavailable": _compiler_unavailable,
+        "wrapper_compile_failure": _wrapper_compile_failure,
     }[case]
 
     def verify(model, plan, rendered, fixtures, profile, *, ctx):

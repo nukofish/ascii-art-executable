@@ -101,6 +101,7 @@ def test_artifact_names_include_realized_size():
     ("token_mismatch", "FAILED", False),
     ("hole_leakage", "FAILED", False),
     ("compiler_unavailable", "FAILED", False),
+    ("wrapper_compile_failure", "FAILED", False),
 ])
 def test_cli_report_uses_e_verifier_stub(tmp_path, monkeypatch, case, status, verified):
     import codeart.cli as cli
@@ -113,7 +114,7 @@ def test_cli_report_uses_e_verifier_stub(tmp_path, monkeypatch, case, status, ve
     data = json.loads(path.read_text())
     assert data["status"] == status
     assert data["verified"] is verified
-    assert {name: data["checks"][name]["status"] for name in ("token", "geometry", "compile", "behavior")} == {
-        name: getattr(report, f"{name}_status").value
+    assert data["checks"] == {
+        name: {"status": getattr(report, f"{name}_status").value, "reason": report.skip_reasons.get(name)}
         for name in ("token", "geometry", "compile", "behavior")
     }

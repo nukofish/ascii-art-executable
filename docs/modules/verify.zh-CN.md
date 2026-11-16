@@ -14,9 +14,10 @@
 
 ## 报告和状态
 
-- 词法比较完整生成源码的有效 token，忽略注释。首个差异含 0 基索引和两侧原始拼写及行列。序列一侧用尽时，该侧位置为 `None`。
+- 词法比较完整生成源码的有效 token，忽略注释。首个差异含 0 基索引和两侧原始拼写及行列。序列一侧用尽时，该侧位置为 `None`。词法失败后，几何、编译和行为均为 `NOT_RUN (TOKEN_NOT_PASS)`。词法因缺依赖或阶段超时跳过时，仍执行独立的几何检查。
 - 几何直接扫描实际字符，核对边界、孔洞、保护格、占位、注释填充规则及 D 的位置和计数。覆盖率的分母是所有可填格，分子只算可填格中的非空白字符。字符串内部空格不计可见覆盖。报告分别记录画布外、掩码外和孔洞泄漏，孔洞格也计入越界合计。
-- 词法通过后做 C11 对象编译，默认使用 `-std=c11 -pedantic-errors`。即使几何失败也独立报告编译结果。前三项都通过才运行行为测试。无匹配夹具时，行为项为 `NOT_RUN`，原因 `NO_FIXTURE`。匹配夹具的画布超过 100,000 格时，原因是 `OUTPUT_TOO_LARGE`。
+- 词法通过后做 C11 对象编译，默认使用 `-std=c11 -pedantic-errors`。即使几何失败也独立报告对象编译结果。几何通过且符合行为测试条件时，编译阶段还会构建原函数和生成函数的包装器可执行文件。任一构建失败或编译超时，编译项为 `FAIL`，行为项为 `NOT_RUN (COMPILE_NOT_PASS)`，诊断注明失败的构建。
+- 所需编译通过后才运行行为程序。无匹配夹具时，行为项为 `NOT_RUN (NO_FIXTURE)`。匹配夹具的画布超过 100,000 格时，行为项为 `NOT_RUN (OUTPUT_TOO_LARGE)`。
 - 编译和词法默认各限 5 秒，每个行为可执行程序的八组输入合计限 2 秒。所有操作受总截止时间约束。缺依赖、全局超时和用户取消使相关未完成项保持 `NOT_RUN`。阶段编译或执行超时使该项为 `FAIL`。macOS 和 Linux 上，编译与执行子进程在独立进程组运行，超时和取消会终止该组并回收子进程。
 - `diagnostics` 保存结构化原因，`skip_reasons` 按检查名记录跳过理由，`durations` 以秒记录尝试过的阶段。`compiler` 记录实际编译器路径、版本及选项，`behavior_cases_compared` 记录实际完成的对照数。四项状态供 F 独立展示。
 
@@ -44,7 +45,7 @@ python -m scripts.run_verification --output-dir docs/reports/2026-11-09-pr-revie
 python3 -m pytest -q tests/test_shapes.py tests/test_verify.py
 ```
 
-测试提供 F 可注入的四种报告夹具，见 `tests/fixtures/verification_reports.py`。E 的隔离矩阵使用真实 B 掩码、测试布局和 Clang 原始词法适配器。真实流水线也有 18 个独立测试，见 `tests/test_source.py`。上面的正式命令在同一个构建会话中运行整套矩阵，保留归档证据。
+测试提供 F 可注入的报告夹具，见 `tests/fixtures/verification_reports.py`。E 的隔离矩阵使用真实 B 掩码、测试布局和 Clang 原始词法适配器。真实流水线也有 18 个独立测试，见 `tests/test_source.py`。上面的正式命令在同一个构建会话中运行整套矩阵，保留归档证据。
 
 `codeart.verification_regression.run_regression(generate_case)` 传给适配器 `(selection, shape_spec, *, ctx)`。适配器负责调用真实流水线，原样转交选择对象和共享截止时间及取消信号，并返回 `VerificationReport`。流水线未产出报告时可返回 `None`。回归总预算为 180 秒，每例最多 30 秒，适配器需支持把剩余预算传入流水线。串行回归会话缓存原函数的可执行构建和对象编译结果，结束时清理所有临时产物。
 

@@ -107,6 +107,7 @@ def test_page_assets_and_report_download(web_server):
     ("token_mismatch", "FAILED", False),
     ("hole_leakage", "FAILED", False),
     ("compiler_unavailable", "FAILED", False),
+    ("wrapper_compile_failure", "FAILED", False),
 ])
 def test_web_report_uses_e_verifier_stub(case, status, verified):
     report = make_verifier_stub(case)(None, None, None, None, None, ctx=None)
@@ -125,6 +126,10 @@ def test_web_report_uses_e_verifier_stub(case, status, verified):
         job = wait_result(base, identifier)
         assert job["result"]["status"] == status
         assert job["result"]["verified"] is verified
+        assert job["result"]["checks"] == {
+            name: {"status": getattr(report, f"{name}_status").value, "reason": report.skip_reasons.get(name)}
+            for name in ("token", "geometry", "compile", "behavior")
+        }
         downloaded, _ = call(base, f"/api/jobs/{identifier}/report.json")
         assert json.loads(downloaded)["result"] == job["result"]
     finally:
