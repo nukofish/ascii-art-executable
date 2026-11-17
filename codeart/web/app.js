@@ -5,6 +5,7 @@ const explanations = {NO_FIXTURE: "Custom input · no behavior fixture", OUTPUT_
 let samples = [];
 let active = null;
 let busy = false;
+let cancelRequested = false;
 
 async function api(path, options = {}) {
   const response = await fetch(path, options);
@@ -61,6 +62,7 @@ function resetResult() {
 }
 function setBusy(value) {
   busy = value;
+  if (!value) cancelRequested = false;
   byId("controls").disabled = value;
   byId("source").readOnly = value;
   byId("file").disabled = value;
@@ -74,8 +76,26 @@ function setBusy(value) {
 function syncFileScope() {
   byId("file-scope").hidden = !byId("file-mode").checked;
 }
+function showCandidates(extraction) {
+  byId("function").replaceChildren(new Option("First eligible function", ""));
+  for (const candidate of extraction.candidates) {
+    const option = new Option(
+      candidate.name + " · " + candidate.start_line + "–" + candidate.end_line + " · " + candidate.a_status,
+      candidate.name
+    );
+    option.disabled = candidate.a_status !== "PASS";
+    byId("function").append(option);
+  }
+  byId("function").value = extraction.selected || "";
+  byId("candidates").textContent = JSON.stringify(
+    extraction.candidates.map(({source_text, ...candidate}) => candidate), null, 2);
+  byId("candidates").hidden = !extraction.candidates.length;
+}
 function render(job) {
   const result = job.result;
+  byId("file-mode").checked = job.file_mode ?? Boolean(result.prepass);
+  syncFileScope();
+  if (result.prepass) showCandidates(result.prepass);
   showChecks(result.checks);
   if (result.source_text !== null) {
     byId("output").textContent = result.source_text;
@@ -115,6 +135,11 @@ function render(job) {
   metrics.hidden = false;
   const diagnostics = byId("diagnostics");
   diagnostics.replaceChildren();
+  if (result.prepass && result.prepass.error) {
+    const paragraph = document.createElement("p");
+    paragraph.textContent = "Function extraction · " + result.prepass.error;
+    diagnostics.append(paragraph);
+  }
   for (const item of result.diagnostics) {
     const paragraph = document.createElement("p");
     const position = item.line ? " at " + item.line + (item.column ? ":" + item.column : "") : "";
@@ -190,23 +215,27 @@ byId("generator").addEventListener("submit", async event => {
     });
     active = response.id;
     sessionStorage.setItem("codeart-job", active);
+    if (cancelRequested) await cancelGeneration();
     poll(active);
   } catch (error) {
     setBusy(false);
     status(error.message, true);
   }
 });
-byId("cancel").addEventListener("click", async () => {
-  if (!active) return;
+async function cancelGeneration() {
+  if (!busy) return;
+  cancelRequested = true;
   byId("cancel").disabled = true;
+  status("Cancellation requested. Waiting for the current work to stop…");
+  if (!active) return;
   try {
     await api("/api/jobs/" + active + "/cancel", {method: "POST"});
-    status("Cancellation requested. Waiting for the current work to stop…");
   } catch (error) {
     status(error.message, true);
     byId("cancel").disabled = false;
   }
-});
+}
+byId("cancel").addEventListener("click", cancelGeneration);
 byId("sample").addEventListener("change", () => {
   const sample = samples.find(item => item.name === byId("sample").value);
   if (sample) {
@@ -251,7 +280,14 @@ Promise.all([api("/api/samples"), api("/api/environment")]).then(([data, environ
     active = previous;
     setBusy(true);
     api("/api/jobs/" + previous).then(job => {
-      byId("source").value = job.source;
+      byId("source").value = job.input_source ?? job.source;
+      byId("file-mode").checked = job.file_mode ?? Boolean(job.result && job.result.prepass);
+      syncFileScope();
+      if (job.result && job.result.prepass) showCandidates(job.result.prepass);
+      else if (job.file_mode && job.function) {
+        byId("function").append(new Option(job.function, job.function));
+        byId("function").value = job.function;
+      }
       byId("shape").value = job.shape;
       byId("scale").value = String(job.scale);
       byId("sample").value = job.sample || "";
@@ -275,17 +311,7 @@ byId("inspect-file").addEventListener("click", async () => {
   try {
     const data = await api("/api/prepass", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({source: byId("source").value})});
     byId("file-mode").checked = true;
-    byId("function").replaceChildren();
-    for (const candidate of data.candidates) {
-      const option = document.createElement("option");
-      option.value = candidate.name;
-      option.disabled = candidate.a_status !== "PASS";
-      option.textContent = candidate.name + " · " + candidate.start_line + "–" + candidate.end_line + " · " + candidate.a_status;
-      option.selected = candidate.name === data.selected;
-      byId("function").append(option);
-    }
-    byId("candidates").textContent = JSON.stringify(data.candidates.map(({source_text, ...candidate}) => candidate), null, 2);
-    byId("candidates").hidden = !data.candidates.length;
+    showCandidates(data);
     syncFileScope();
     resetResult();
     status(data.error || data.validation_scope, Boolean(data.error));

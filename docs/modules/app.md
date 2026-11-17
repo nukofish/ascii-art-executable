@@ -14,10 +14,14 @@ are validated on submission. The app supports one active generation and
 retains five runs. Page refresh can reconnect to the active run in the same
 browser tab.
 
+File-mode jobs retain the complete input alongside the extracted function.
+Refreshing restores file mode, the selected candidate and its scope notice.
+
 The server runs generation in a worker thread and passes a shared Event to
 the pipeline. Cancellation stops work through the module contexts and their
-subprocess runners. Completed artifacts remain available. Shutdown requests
-cancellation and waits for the active pipeline to finish cleanup.
+subprocess runners. Complete-file analysis runs in the same cancellable job
+and shares its generation deadline. Completed artifacts remain available.
+Shutdown requests cancellation and waits for the active pipeline to finish cleanup.
 
 Original text and generated source use the same fixed font. Long lines
 scroll without wrapping. The interface shows each validation state and skip
@@ -61,9 +65,15 @@ ignored; it normalises CRLF/lone CR and strips a leading UTF-8 BOM. It is
 lexical, not a full C parser: K&R-style definitions and some macro-generated
 declarations may not be listed.
 
-`/api/generate` with `file_mode: true` runs the same prepass, replaces the
-source with the selected function, clears the sample selection and attaches
-the prepass result to the job. The report includes `ignored_lines` and
+`/api/generate` with `file_mode: true` returns HTTP 202 with a job ID before
+the prepass runs. The job replaces the source with the selected function,
+clears the sample selection and attaches the prepass result. Extraction
+failures are finished jobs with `status=FAILED`, all four checks `NOT_RUN`,
+and the extraction error in `prepass`. Invalid request fields still return
+HTTP 400. The separate `/api/prepass` inspection endpoint is synchronous.
+Snapshots retain `source` as the extracted function and add `input_source`,
+`file_mode` and `function` for page restoration.
+The report includes `ignored_lines` and
 precise same-line `ignored_segments`. Only the extracted function is verified;
 `generate()` and A still accept exactly one self-contained function.
 
@@ -85,8 +95,9 @@ Copyright 2015 The Roboto Mono Project Authors. The complete SIL Open Font
 License 1.1 is included in `codeart/web/fonts/OFL.txt`. The font was obtained
 from `fonts/ttf/RobotoMono-Regular.ttf` in that project's main branch.
 
-The app's CSS uses `font-size: 12px`, `line-height: 2ch`, zero letter
-spacing and disabled ligatures. This gives a physical character width to
+The app's CSS uses `font-size: 12px`, zero letter spacing and disabled
+ligatures. The result's `cell_aspect` sets line height, with `2ch` as the
+initial fallback. This gives a physical character width to
 row-height ratio of 0.5, matching B's default `FontMetrics`. The font is
 served locally and the application needs no external font service.
 
@@ -114,7 +125,9 @@ Downloads include the realized height and scale in their names, for example
 worktree state. Keep fixed and grown evidence separate. A CLI report records
 the revision alongside check results and attempt history.
 
-The CI baseline uses macos-15, Python 3.12 and libclang 18.1.1.
+The default full CI runs on Ubuntu for every PR, using Python 3.12,
+clang-18 and libclang 18.1.1. The additional macos-15 full job runs on
+manual dispatch or a PR carrying the `macos-ci` label.
 It prints `clang --version` and records the complete environment. The test
 count guard compares collected counts against the PR base or previous main
 commit. A collection error fails the guard.

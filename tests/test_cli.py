@@ -87,6 +87,52 @@ def test_failed_layout_keeps_attempt_history():
     assert report["checks"]["geometry"]["status"] == "NOT_RUN"
 
 
+@pytest.mark.parametrize("option", ["--source", "--file"])
+@pytest.mark.parametrize("alias", ["direct", "symlink", "hardlink"])
+def test_cli_rejects_output_paths_that_alias_input(tmp_path, option, alias):
+    source_file = tmp_path / "input.c"
+    original = b"int f(void){return 0;}\n"
+    source_file.write_bytes(original)
+    output = source_file
+    if alias == "symlink":
+        output = tmp_path / "output.c"
+        output.symlink_to(source_file)
+    elif alias == "hardlink":
+        output = tmp_path / "output.c"
+        os.link(source_file, output)
+
+    result = subprocess.run(
+        [sys.executable, "-m", "codeart.cli", option, str(source_file),
+         "--output", str(output)],
+        capture_output=True, text=True, timeout=35,
+    )
+
+    assert result.returncode == 2
+    assert f"{option} and --output must refer to different files" in result.stderr
+    assert source_file.read_bytes() == original
+    assert output.read_bytes() == original
+
+
+def test_cli_prepass_timeout_keeps_common_failure_report(tmp_path, monkeypatch):
+    import codeart.cli as cli
+    from codeart.contracts import StageError
+
+    def stopped(*args, **kwargs):
+        raise StageError(Diagnostic(ErrorCode.PIPELINE_TIMEOUT, "pipeline", "Timed out"))
+
+    source = tmp_path / "input.c"
+    source.write_text("int f(void){return 0;}\n")
+    report_path = tmp_path / "report.json"
+    monkeypatch.setattr(cli, "inspect_file", stopped)
+
+    assert cli.main(["--file", str(source), "--report", str(report_path)]) == 1
+    report = json.loads(report_path.read_text())
+    assert report["status"] == "FAILED"
+    assert report["prepass"]["error"] == "PIPELINE_TIMEOUT"
+    assert report["diagnostics"][0]["code"] == "PIPELINE_TIMEOUT"
+    assert all(check["status"] == "NOT_RUN" for check in report["checks"].values())
+
+
 def test_artifact_names_include_realized_size():
     from codeart.presentation import artifact_name
     fixed = artifact_name("max2", "cat", {"height": 32, "scale": 1})

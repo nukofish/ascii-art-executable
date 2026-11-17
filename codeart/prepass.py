@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 import re
 from time import monotonic
 
-from .contracts import RunContext, StageError
+from .contracts import ErrorCode, RunContext, StageError
 from .source import analyze_source
 
 SCOPE = "Only the extracted function is verified, not the entire input program."
@@ -158,7 +158,7 @@ def _diagnostic(code, line, column, message):
     return {'code': code, 'line': line, 'column': column, 'message': message}
 
 
-def inspect_file(text, function=None, *, analyzer=analyze_source, timeout_s=30):
+def inspect_file(text, function=None, *, analyzer=analyze_source, timeout_s=30, ctx=None):
     """Return raw candidates with A diagnostics mapped to original file lines.
 
     ``text`` is normalised to LF (and a leading BOM is stripped) before
@@ -173,7 +173,8 @@ def inspect_file(text, function=None, *, analyzer=analyze_source, timeout_s=30):
         result.ignored_segments = _ignored_segments(text, None)
         return result
 
-    ctx = RunContext(monotonic() + timeout_s)
+    ctx = ctx or RunContext(monotonic() + timeout_s)
+    ctx.check()
     masked_code = _mask_comments_and_literals(text)
     masked = _mask_directives(masked_code)
     conditional_lines = _conditional_lines(masked_code)
@@ -182,6 +183,7 @@ def inspect_file(text, function=None, *, analyzer=analyze_source, timeout_s=30):
     boundary = 0
     opening = None
     for index, character in enumerate(masked):
+        ctx.check()
         if character == '{':
             if depth == 0:
                 header = masked[boundary:index]
@@ -220,6 +222,8 @@ def inspect_file(text, function=None, *, analyzer=analyze_source, timeout_s=30):
                             name = model.function_name or name_hint
                         except StageError as exc:
                             error = exc.diagnostic
+                            if error.code in (ErrorCode.CANCELLED, ErrorCode.PIPELINE_TIMEOUT):
+                                raise
                             diagnostic = _diagnostic(
                                 error.code.value,
                                 start_line + error.line - 1 if error.line else None,
