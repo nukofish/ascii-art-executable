@@ -98,15 +98,14 @@ The same command reads B's `metrics_h{32,64,128}.json` files and reports
 the 1×, 2×, and 4× cat checks under `cat_scales`. B uses h96 for its 3×
 regression. The JSON field `passed` requires the fixed matrix and all three
 cat checks to pass. The exit code reflects `fixed_matrix_passed`. A scale
-with no reference is `NOT_RUN (MISSING_REFERENCE)`. All scales use h32 for
-the base area and tolerance parameters.
+with no reference or with a legacy fixture missing an exact boundary count
+is `NOT_RUN (MISSING_REFERENCE)`.
 
 Expected eye and nose areas are the h32 counts multiplied by the square
-of the scale. The tolerance is the maximum of B's relative term,
-perimeter approximation, and minimum cell count. The centroid and ear gap
-come from the corresponding height. B stores cell-center coordinates.
-The adapter subtracts 0.5 from each axis to obtain E's zero-based cell
-indices.
+of the scale. The area tolerance for each hole is B's exact
+`boundary_cells` count at the corresponding height. The centroid and ear
+gap also come from that height. B stores cell-center coordinates. The
+adapter subtracts 0.5 from each axis to obtain E's zero-based cell indices.
 
 ## Isolated tests and regression interface
 
