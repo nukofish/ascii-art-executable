@@ -72,6 +72,10 @@ details, `skip_reasons` maps check names to reasons, and `durations` records
 seconds for attempted stages. `compiler` records the actual compiler path,
 version, and flags. `behavior_cases_compared` counts completed comparisons.
 
+The [v1.5 acceptance decision](../reports/E_verify.md#v15-budget-and-coverage-decision)
+records the measured basis for retaining the budgets and fixed-fixture
+coverage thresholds. F's confirmation of the Web file-mode budget is pending.
+
 ## Fixed-size acceptance
 
 Run from the repository root. Give each run a fresh directory, and keep

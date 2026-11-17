@@ -59,3 +59,57 @@ for rows, fixture in ((32, None), (240, selection)):
           report.behavior_cases_compared)
 PY
 ```
+
+## v1.5 budget and coverage decision
+
+E recommends retaining the existing limits. Coverage applies to the fixed
+fixtures at **85% total** and **70% for each cat ear**. Keep 5 s for input
+analysis and 5 s for layout, 5 s for output lexing and 5 s per compiler
+invocation, and 2 s per behavior executable's batch of eight inputs. The
+generation budget stays at 30 s and the fixed regression budget at 180 s
+overall, with at most 30 s per case. Run behavior comparisons for matching
+fixtures on canvases of at most 100,000 cells.
+
+A clean checkout of `b66cbc94ac769e23fd8b1c84fd8e8e2e4f5cfe17` (includes
+[#42](https://github.com/nukofish/ascii-art-executable/pull/42)) ran on
+macOS arm64 with Python 3.12.10, Apple Clang 21.0.0, libclang 18.1.1, and
+pytest 9.2.0.
+
+- The [fixed acceptance command](#fixed-acceptance) returned `passed=true`,
+  with 18/18 outputs, 144/144 comparisons, and cat masks at 1×, 2×, and 4×
+  passing. The matrix took 5.29 s and its slowest generation took 0.55 s.
+  Total coverage was 98.86–99.90%, and the lowest single-ear coverage was
+  89.15%. The largest per-case compile and behavior phase totals were
+  0.095 s and 0.332 s. These phase totals cover multiple builds or executions
+  when applicable.
+- The [long-token CLI example](README.md#automatic-growth-demonstration)
+  grew from the default height of 32 to 41 rows through the initial estimator
+  and passed token, geometry, and compilation. The [oversized fixture probe](#behavior-skip-cases)
+  confirmed that at 480 × 240 those checks pass and behavior reports
+  `NOT_RUN (OUTPUT_TOO_LARGE)` with zero comparisons.
+- The boundary regression command below passed 50 tests. The timeout and
+  cancellation cases use shortened limits or injected work to check stop
+  behavior and diagnostics. The real Web file-mode test generates the
+  extracted function through HTTP. The separate orchestration tests verify
+  that delayed prepass work reduces the budget passed to generation and
+  that cancellation during prepass stops the job before generation.
+
+```sh
+NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost \
+python -m pytest -q tests/test_app.py tests/test_prepass.py tests/test_web_app.py \
+  tests/test_layout.py::test_layout_stage_timeout_raises_layout_timeout \
+  tests/test_layout.py::test_layout_timeout_is_shared_across_retries \
+  tests/test_pipeline.py::test_expired_budget_prevents_next_stage \
+  tests/test_source.py::test_analysis_stops_and_reaps_worker \
+  tests/test_verify.py::test_large_canvas_still_compiles \
+  tests/test_verify.py::test_compile_stage_timeout_and_global_deadline \
+  tests/test_verify.py::test_wrapper_build_failure_skips_behavior \
+  tests/test_verify.py::test_behavior_timeout_marks_case_index \
+  tests/test_verify.py::test_running_process_group_is_cancelled \
+  tests/test_cli.py::test_cli_prepass_timeout_keeps_common_failure_report --tb=short
+```
+
+F's confirmation of the proposed values and the Web file-mode end-to-end
+budget and cancellation behavior is pending. Web file-mode generation shares
+the 30 s budget with prepass. The CLI's `--file` command has a separate
+prepass budget.
