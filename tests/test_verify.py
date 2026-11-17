@@ -40,7 +40,7 @@ def clang_lex_for_test(source, *, ctx):
     result = subprocess.run(
         [CLANG, "-std=c11", "-x", "c", "-fsyntax-only", "-Xclang", "-dump-raw-tokens", "-"],
         input=source, text=True, capture_output=True, check=True,
-        timeout=max(0, ctx.deadline - monotonic()),
+        timeout=ctx.remaining_s(),
     )
     tokens = []
     offset = 0
@@ -317,23 +317,23 @@ def test_missing_dependencies_and_no_fixture(tmp_path):
 
 
 @requires_clang
-def test_lexer_callback_receives_shared_budget_api():
+@pytest.mark.parametrize("overall", (3.0, 30.0))
+def test_lexer_callback_receives_shared_budget_api(overall):
     event = Event()
-    generation = RunContext(monotonic() + 30, event)
+    generation = RunContext(overall, event, clock=lambda: 0.0)
     case = make_case("int f(void) { return 0; }\n", "f")
     budgets = []
 
     def lex(source, *, ctx):
         assert ctx.cancel_event is event
-        assert ctx.deadline < generation.deadline
+        assert ctx.clock is generation.clock
         budgets.append(ctx.remaining_s())
         return clang_lex_for_test(source, ctx=ctx)
 
     report = run(case, selected_profile=profile(lex_source=lex, lex_timeout=5.0),
                  ctx=generation)
     assert statuses(report) == ("PASS", "PASS", "PASS", "NOT_RUN"), report.diagnostics
-    assert len(budgets) == 1
-    assert 0 < budgets[0] <= 5.0
+    assert budgets == [min(overall, 5.0)]
 
 
 @requires_clang
@@ -600,3 +600,20 @@ def test_regression_reports_unverified_cases_and_cancellation():
     assert report.cases[0].issues == ("VERIFICATION_MISSING",)
     assert report.interrupted == "CANCELLED"
     assert not report.matrix_passed
+
+
+def test_regression_uses_injected_clock_for_run_and_case_deadlines():
+    now = 0.0
+    parent = RunContext(200.0, clock=lambda: now)
+
+    def generate(selection, shape, *, ctx):
+        nonlocal now
+        assert ctx.clock is parent.clock
+        assert ctx.remaining_s() == 30.0
+        now = 180.0
+        return None
+
+    report = run_regression(generate, ctx=parent)
+    assert report.interrupted == "PIPELINE_TIMEOUT"
+    assert len(report.cases) == 1
+    assert report.cases[0].issues == ("VERIFICATION_MISSING", "CASE_DEADLINE")

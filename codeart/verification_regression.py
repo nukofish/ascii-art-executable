@@ -182,10 +182,14 @@ def run_regression(
     context. The runner owns the serial session and its temporary build cache.
     """
     start = monotonic()
-    total = VerificationContext(
-        start + 180 if ctx is None else min(ctx.deadline, start + 180),
-        None if ctx is None else ctx.cancel_event,
-    )
+    if ctx is None:
+        total = VerificationContext(start + 180)
+    else:
+        total = VerificationContext(
+            min(ctx.deadline, ctx.clock() + 180),
+            ctx.cancel_event,
+            clock=ctx.clock,
+        )
     cases = []
     interrupted = None
     cat_scales = {
@@ -199,12 +203,15 @@ def run_regression(
                 selection = FixtureSelection(fixture, builds)
                 for kind in ("circle", "cat", "code"):
                     check_context(total)
-                    case_ctx = VerificationContext(min(total.deadline, monotonic() + 30),
-                                                   total.cancel_event)
+                    case_ctx = VerificationContext(
+                        min(total.deadline, total.clock() + 30),
+                        total.cancel_event,
+                        clock=total.clock,
+                    )
                     shape = ShapeSpec(kind, text="CODE" if kind == "code" else None)
                     report = generate_case(selection, shape, ctx=case_ctx)
                     issues = _case_issues(report, kind, min_coverage, min_ear_coverage)
-                    if monotonic() >= case_ctx.deadline:
+                    if case_ctx.remaining_s() <= 0:
                         issues += ("CASE_DEADLINE",)
                     cases.append(RegressionCase(fixture.name, kind, report, issues))
             for scale in cat_scales:

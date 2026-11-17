@@ -28,6 +28,11 @@ def test_shared_contracts_and_missing_final_newline():
     assert model.profile.lex_source is not None
 
 
+def test_source_analysis_uses_injected_clock_for_child_processes():
+    model = source.analyze_source(SIMPLE, ctx=RunContext(10.0, clock=lambda: 0.0))
+    assert model.function_name == "f"
+
+
 @pytest.mark.parametrize("text", [
     "int f(int x) { return g(x); }",
     "int f(void) { return ext; }",

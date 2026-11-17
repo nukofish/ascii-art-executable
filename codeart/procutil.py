@@ -22,7 +22,6 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 from tempfile import TemporaryDirectory, mkdtemp
-from time import monotonic
 
 from .contracts import CompilerInfo
 
@@ -51,7 +50,7 @@ class CommandTimedOut(Exception):
 def check_context(ctx) -> None:
     if ctx.cancel_event is not None and ctx.cancel_event.is_set():
         raise WorkStopped("CANCELLED")
-    if monotonic() >= ctx.deadline:
+    if ctx.remaining_s() <= 0:
         raise WorkStopped("PIPELINE_TIMEOUT")
 
 
@@ -78,7 +77,7 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
     child's process group is killed before the exception leaves this function.
     """
     check_context(ctx)
-    deadline = monotonic() + timeout
+    deadline = ctx.clock() + timeout
     try:
         proc = subprocess.Popen(
             args, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
@@ -91,7 +90,7 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
         try:
             while True:
                 check_context(ctx)
-                remaining = min(deadline, ctx.deadline) - monotonic()
+                remaining = min(deadline, ctx.deadline) - ctx.clock()
                 if remaining <= 0:
                     break
                 try:
@@ -99,7 +98,7 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
                 except subprocess.TimeoutExpired:
                     continue
                 check_context(ctx)
-                if monotonic() >= deadline:
+                if ctx.clock() >= deadline:
                     raise CommandTimedOut(stdout.decode("utf-8", errors="replace"))
                 return subprocess.CompletedProcess(
                     args, proc.returncode,
