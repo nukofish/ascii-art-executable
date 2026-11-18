@@ -123,6 +123,20 @@ class RunContext:
             _real_deadline=min(parent._real_deadline, monotonic() + timeout),
         )
 
+    @property
+    def real_deadline(self) -> float | None:
+        """Deadline on the real monotonic clock, used when the injected clock is untrusted.
+
+        ``deadline`` is measured by the injected ``clock``, which deterministic
+        tests may freeze or rescale; such a clock cannot prove that real time
+        is passing.  This read-only value is derived once, at construction
+        time, from :func:`time.monotonic` (or supplied by an enclosing stage),
+        so a stage can fall back to real time without changing the meaning of
+        ``deadline`` or ``remaining_s``.  ``__post_init__`` always fills the
+        stored value for a normally constructed context.
+        """
+        return self._real_deadline
+
     def remaining_s(self) -> float:
         now = self.clock()
         real_now = now if self.clock is monotonic else monotonic()

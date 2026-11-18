@@ -85,7 +85,10 @@ limit and `ctx.remaining_s()`. Terminate and reap subprocesses when cancelled
 or timed out.
 
 C checks the shared `RunContext` for cancellation and the overall deadline.
-Its layout-stage deadline uses the injected clock and is shared by all retries.
+Its layout-stage deadline is tracked in both the injected clock domain and the
+real monotonic domain (via `ctx.real_deadline`), and one budget is shared by all
+retries; the real-time fallback keeps a frozen test clock from suppressing
+`LAYOUT_TIMEOUT`.
 
 A, B, C and D raise `PipelineError(Diagnostic(...))` for diagnosed failures.
 `PipelineError` is the canonical name for the stage failure; `StageError` is a
