@@ -1,5 +1,39 @@
 # Part F completion checks
 
+## v1.5 file-mode acceptance and budget sign-off
+
+Checked on 18 November 2026 in Hong Kong using Chromium 151.0.7922.34 on
+macOS arm64 and a real local server. The code under test is the file-mode
+refresh fix in this change, based on `main` at `4682c7551bd329fdcce20dd20de6761ed45fce64`.
+
+| Browser action | Result |
+| --- | --- |
+| Upload a C file with 120 independent functions, start generation, and cancel while candidate analysis is running | The job finished as `CANCELLED` without a completed prepass or generated source. All four checks showed `NOT_RUN (CANCELLED)`. |
+| Upload a file containing `other`, `target` and `main`, find functions, select `target`, generate, and reload after `Verified` appears | Reload restored the full input, file mode, `target`, the generated result and the extracted-function-only scope notice. |
+| Edit the source after restoring a result, then reload | The previous result was cleared. |
+
+The original refresh regression covered recovering a job ID still stored in
+the tab. The browser run exposed a separate case where a successful job lost
+its ID after rendering. The fix retains the ID for a successful file-mode job
+until the input or generation settings change. The ID points to a result
+held by the local server, so recovery applies within the same tab and while
+the server still holds that job.
+
+F signs off on the defaults in [E's v1.5 budget and coverage decision](E_verify.md#v15-budget-and-coverage-decision).
+Web file-mode generation shares one **30 s** budget and cancellation signal
+between candidate analysis and generation. The separate **Find functions**
+action and the CLI `--file` prepass have their own budgets. The HTTP
+orchestration tests verify the shared signal and that prepass time is deducted
+from the generation budget. Keep the fixed-fixture coverage thresholds at
+**85% overall** and **70% for each cat ear**.
+
+The full suite passed 388 tests. The first fixed acceptance run recorded an
+`EXECUTION_TIMEOUT` for the original `max2` in the circle case (136/144
+comparisons). A fresh rerun with the same limits completed 144/144 and passed
+all three cat scales.
+
+## Earlier completion checks
+
 After merging Part E, see [the updated validation](F_after_E.md).
 
 Code under test is commit `a6b3662f0f964064a8d2665b34fe1b0e102805e2`, based on

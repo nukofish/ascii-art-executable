@@ -46,6 +46,7 @@ function showChecks(checks = {}) {
   }
 }
 function resetResult() {
+  sessionStorage.removeItem("codeart-job");
   byId("output").hidden = true;
   byId("output").textContent = "";
   byId("empty").hidden = false;
@@ -186,7 +187,7 @@ async function poll(identifier) {
     }
     render(job);
     active = null;
-    sessionStorage.removeItem("codeart-job");
+    if (!job.file_mode || job.result.status !== "OK") sessionStorage.removeItem("codeart-job");
     setBusy(false);
   } catch (error) {
     if (active !== identifier) return;
@@ -256,6 +257,7 @@ byId("source").addEventListener("input", () => {
   status("Source changed. Generate to update the result.");
 });
 for (const id of ["shape", "scale"]) byId(id).addEventListener("change", resetResult);
+byId("function").addEventListener("change", resetResult);
 byId("file").addEventListener("change", async event => {
   const file = event.target.files[0];
   if (!file) return;
