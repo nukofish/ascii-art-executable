@@ -35,6 +35,37 @@ def test_cli_real_sample_source_and_report(tmp_path):
     assert output.read_bytes().endswith(b"\n")
 
 
+def test_cli_program_arranges_and_writes_the_complete_translation_unit(tmp_path):
+    source = tmp_path / "program.c"
+    output = tmp_path / "generated.c"
+    report_path = tmp_path / "program.json"
+    source.write_text(
+        '#include <stdio.h>\n'
+        '#define VALUE 17\n'
+        'static int helper(void) { return VALUE; }\n'
+        'int main(void) { printf("%d\\n", helper()); return 0; }\n'
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-m", "codeart.cli", "--program", str(source),
+         "--shape", "circle", "--output", str(output), "--report", str(report_path)],
+        capture_output=True, text=True, timeout=35,
+    )
+
+    assert result.returncode == 0, result.stderr
+    report = json.loads(report_path.read_text())
+    assert report["program_mode"] is True
+    assert report["source_text"] == output.read_text()
+    assert output.read_text().startswith("#include <stdio.h>\n#define VALUE 17\n")
+    binary = tmp_path / "generated-program"
+    subprocess.run(
+        ["clang", "-std=c11", "-pedantic-errors", str(output), "-o", str(binary)],
+        check=True, capture_output=True, text=True, timeout=10,
+    )
+    run = subprocess.run([str(binary)], check=True, capture_output=True, text=True, timeout=5)
+    assert run.stdout == "17\n"
+
+
 def test_cli_skipped_required_check_returns_nonzero(monkeypatch):
     import codeart.cli as cli
     result = GenerationResult(verification=VerificationReport(
@@ -87,7 +118,7 @@ def test_failed_layout_keeps_attempt_history():
     assert report["checks"]["geometry"]["status"] == "NOT_RUN"
 
 
-@pytest.mark.parametrize("option", ["--source", "--file"])
+@pytest.mark.parametrize("option", ["--source", "--program", "--file"])
 @pytest.mark.parametrize("alias", ["direct", "symlink", "hardlink"])
 def test_cli_rejects_output_paths_that_alias_input(tmp_path, option, alias):
     source_file = tmp_path / "input.c"

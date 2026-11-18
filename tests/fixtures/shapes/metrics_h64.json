@@ -25,10 +25,10 @@
     "cat": {
       "cols": 128,
       "rows": 64,
-      "bbox_ratio": 1.016393,
-      "allowed_cells": 5284,
-      "spans_total": 99,
-      "rows_with_multiple_spans": 26,
+      "bbox_ratio": 1.0,
+      "allowed_cells": 5078,
+      "spans_total": 97,
+      "rows_with_multiple_spans": 25,
       "features": {
         "eye_left": {
           "cells": 163,

@@ -175,6 +175,15 @@ def test_closing_never_fills_a_design_hole_below_the_verified_range():
             cells = mask.features[name]
             assert all(not mask.allowed[row][col] for row, col in cells), (rows, name)
 
+@pytest.mark.parametrize("rows", (75, 77, 78, 96))
+def test_cat_ears_join_the_head_without_outer_spurs(rows):
+    mask = make("cat", rows)
+    assert len(geometry_metrics(mask)["holes"]) == 3
+    # Between the forehead and the eyes, the sides of the head are continuous.
+    forehead = next(i for i, spans in enumerate(mask.spans) if len(spans) == 1)
+    first_eye = min(row for row, _ in mask.features["eye_left"])
+    assert all(len(row) == 1 for row in mask.spans[forehead:first_eye])
+
 
 # ------------------------------------------- v1.5 notch and boundary cells --
 

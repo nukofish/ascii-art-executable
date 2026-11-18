@@ -44,6 +44,13 @@ plan = fit_layout(
    span without committing anything; when no span can hold it, the attempt
    fails and reports that token's index.
 
+For complete programs, the initial estimate targets 85% token occupancy.
+The engine grows by a few rows when a candidate almost fits and probes smaller
+masks after a fit, within the same attempt and time limits. It selects a
+canvas from the original tokens and then redistributes tail slack inside
+that canvas. Each added inline gap is at most seven cells, enough for a
+short comment such as ` /*o*/ `.
+
 ## Initial size estimate
 
 Before the retry loop, the engine builds a scale-1 base mask and measures it
@@ -138,6 +145,8 @@ codes - never with an `AttributeError` before the first attempt.
   `CANCELLED` / `PIPELINE_TIMEOUT` through the wrapped context, before the
   stage budget is considered.
 - Running past either layout-stage deadline is reported as `LAYOUT_TIMEOUT`.
+  A complete program can keep an already successful layout if an optional
+  smaller-size probe reaches that deadline.
 - Each attempt's `elapsed_s` covers both mask generation and token packing.
 
 ## Attempt history

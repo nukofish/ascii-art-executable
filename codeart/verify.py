@@ -27,6 +27,7 @@ from .procutil import (
     DependencyUnavailable,
     WorkStopped,
     check_context,
+    run_command,
 )
 from .verification_fixtures import BUILTIN_FIXTURES, FixtureSelection
 
@@ -78,7 +79,11 @@ def _first_diff(expected, actual, ctx):
         else:
             reason = "KIND_OR_SPELLING"
         expected_loc = (
-            TokenLocation(left.kind, left.spelling, left.source_line, left.source_column)
+            TokenLocation(
+                left.kind, left.spelling,
+                getattr(left, "source_line", getattr(left, "line", None)),
+                getattr(left, "source_column", getattr(left, "column", None)),
+            )
             if left is not None else None
         )
         actual_loc = (
@@ -96,7 +101,8 @@ def _check_tokens(model, rendered, profile, ctx, report):
     lex_ctx = VerificationContext.within(ctx, profile.lex_timeout)
     try:
         tokens = []
-        for token in profile.lex_source(rendered.source_text, ctx=lex_ctx):
+        source_text = getattr(rendered, "artwork_source_text", None) or rendered.source_text
+        for token in profile.lex_source(source_text, ctx=lex_ctx):
             check_context(lex_ctx)
             if not token.is_comment:
                 tokens.append(token)
@@ -137,6 +143,66 @@ def _check_tokens(model, rendered, profile, ctx, report):
         location.line, location.column, {"index": diff.index, "reason": diff.reason},
     ))
     return None
+
+
+def _preprocessed_tokens(source, profile, builds, compiler, ctx):
+    path = builds.root / "program.c"
+    path.write_text(source if source.endswith("\n") else source + "\n",
+                    encoding="utf-8", newline="")
+    result = run_command(
+        [compiler.path, *compiler.flags, "-E", "-P", str(path)],
+        cwd=builds.root, env=builds.env, ctx=ctx, timeout=profile.compile_timeout,
+    )
+    if result.returncode != 0:
+        raise BuildFailed(result)
+    lex_ctx = VerificationContext.within(ctx, profile.lex_timeout)
+    return tuple(
+        token for token in profile.lex_source(result.stdout, ctx=lex_ctx)
+        if not token.is_comment
+    )
+
+
+def _check_program_preprocessing(model, rendered, profile, ctx, report):
+    """Ensure moving directives to the prefix leaves macro expansion unchanged."""
+    try:
+        with BuildSession() as builds:
+            compiler = builds.compiler_info(profile, ctx)
+            original = _preprocessed_tokens(
+                model.original_source, profile, builds, compiler, ctx,
+            )
+            generated = _preprocessed_tokens(
+                rendered.source_text, profile, builds, compiler, ctx,
+            )
+    except BuildFailed as exc:
+        report.token_status = CheckStatus.FAIL
+        report.diagnostics.append(Diagnostic(
+            ErrorCode.TOKEN_MISMATCH, "token",
+            "The generated program could not be preprocessed",
+            details={"stderr": exc.result.stderr},
+        ))
+        return False
+    except CommandTimedOut as exc:
+        raise StageError(Diagnostic(
+            ErrorCode.ANALYSIS_TIMEOUT, "token",
+            "Preprocessor comparison exceeded its time budget",
+        )) from exc
+    except DependencyUnavailable as exc:
+        raise StageError(Diagnostic(
+            ErrorCode.DEPENDENCY_UNAVAILABLE, "token", str(exc),
+        )) from exc
+    diff = _first_diff(original, generated, ctx)
+    if diff is None:
+        return True
+    report.token_status = CheckStatus.FAIL
+    report.first_diff = diff
+    location = diff.actual or diff.expected
+    report.diagnostics.append(Diagnostic(
+        ErrorCode.TOKEN_MISMATCH, "token",
+        "Moving unsupported sections changed the preprocessor output",
+        location.line, location.column,
+        {"index": diff.index, "reason": diff.reason},
+    ))
+    return False
 
 
 def _compile(builds, mode, source, wrapper, profile, ctx, report):
@@ -262,10 +328,31 @@ def verify(model, plan, rendered, fixtures, profile, *, ctx) -> VerificationRepo
                 geometry="TOKEN_NOT_PASS", compile="TOKEN_NOT_PASS", behavior="TOKEN_NOT_PASS",
             )
             return report
+        if getattr(model, "program_mode", False) and report.token_status == CheckStatus.PASS:
+            report.token_status = CheckStatus.NOT_RUN
+            with _stage(report, stage, ctx):
+                if not _check_program_preprocessing(model, rendered, profile, ctx, report):
+                    report.skip_reasons.update(
+                        geometry="TOKEN_NOT_PASS", compile="TOKEN_NOT_PASS",
+                        behavior="TOKEN_NOT_PASS",
+                    )
+                    return report
+                report.token_status = CheckStatus.PASS
 
         stage = "geometry"
         with _stage(report, stage, ctx):
-            report.geometry_metrics, issues = check_geometry(model, plan, rendered, tokens, ctx)
+            artwork = rendered
+            artwork_source_text = getattr(rendered, "artwork_source_text", None)
+            if artwork_source_text is not None:
+                artwork = rendered.__class__(
+                    source_text=artwork_source_text,
+                    position_map=rendered.position_map,
+                    coverage=rendered.coverage,
+                    token_coverage=rendered.token_coverage,
+                    comment_coverage=rendered.comment_coverage,
+                    comment_cells=rendered.comment_cells,
+                )
+            report.geometry_metrics, issues = check_geometry(model, plan, artwork, tokens, ctx)
             report.geometry_status = CheckStatus.PASS
             if issues.reasons:
                 report.geometry_status = CheckStatus.FAIL
@@ -297,7 +384,11 @@ def verify(model, plan, rendered, fixtures, profile, *, ctx) -> VerificationRepo
         programs = None
         with session as builds:
             with _stage(report, stage, ctx):
-                artifact = _compile(builds, "object", rendered.source_text, "", profile,
+                mode = (
+                    "rendered" if getattr(model, "program_mode", False)
+                    and getattr(model, "has_main", False) else "object"
+                )
+                artifact = _compile(builds, mode, rendered.source_text, "", profile,
                                     ctx, report)
                 if artifact is not None:
                     if behavior_skip_reason is None:

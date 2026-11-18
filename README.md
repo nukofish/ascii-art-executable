@@ -2,10 +2,14 @@
 
 English · [简体中文](README.zh-CN.md)
 
-Reformat one self-contained C11 function into a circle, a cat head or hollow
-CODE while preserving effective tokens. Python implements the pipeline,
-libclang checks source structure and lexical boundaries, and Clang compiles
-the output. Token, geometry, compile and behavior checks are reported separately.
+Paste or open a complete C11 program and arrange it as a circle, a cat head
+or hollow CODE. Copy or download the resulting `.c` file. The layout starts
+with the program's own tokens and distributes short filler comments using
+space left in the selected canvas. Single-function input, function extraction
+and built-in samples are also available.
+
+libclang checks token preservation and Clang compiles the result. The app
+reports token, geometry, compile and behavior checks separately.
 
 ## Install
 
@@ -66,22 +70,27 @@ python -m codeart.app
 
 Open **http://127.0.0.1:8765**. Use `--port 8766` if that port is occupied.
 
-1. Choose one of the six built-in functions, open a `.c` file, or paste a function.
+1. Choose one of the six built-in functions, or open or paste C source.
 2. Select circle, cat or hollow CODE and an initial scale from 1 to 4.
-3. Generate and inspect the original source, artwork, actual grid size, scale,
+3. **Arrange a complete C program** is selected by default. Preprocessor
+   directives and complete conditional blocks stay above the artwork,
+   separated by two blank lines.
+4. Generate and inspect the original source, artwork, actual grid size, scale,
    attempts, coverage, elapsed time and four independent check results.
-4. Review diagnostics and layout history. Download the source or JSON report.
-5. Use Cancel while a generation is running. Completed results are retained.
+5. Use **Copy code** or download the complete source. Diagnostics, layout
+   history and a JSON report are also available.
+6. Use Cancel while a generation is running. Completed results are retained.
 
 The application binds to loopback and processes one generation at a time.
 Closing its terminal with Ctrl+C requests cancellation and shuts it down.
 It retains the latest five runs in memory. Downloads must be saved before
 those runs are evicted or the server is stopped.
+The web app does not execute user programs. Custom program behavior checks are
+`NOT_RUN`, so run the downloaded program manually to compare its behavior.
 
-Preview uses bundled Roboto Mono Regular with cell height equal to two
-character widths, matching B's 0.5 aspect ratio. Space and LF characters are
-preserved and long lines scroll horizontally. Font provenance and its SIL
-Open Font License are documented in [the app module guide](docs/modules/app.md).
+The artwork preview fits the available space and keeps lines and holes aligned.
+Wide characters use two cells. The preview uses bundled Roboto Mono Regular
+and system fallback fonts for missing glyphs. See the [app module guide](docs/modules/app.md).
 
 ## Command line
 
@@ -98,6 +107,24 @@ Compile and verify an ordinary function:
 python -m codeart.cli --source example.c --shape circle --output generated.c
 ```
 
+Arrange and write a complete C program:
+
+```sh
+python -m codeart.cli --program task_manager.c --shape cat \
+  --output task_manager_art.c --report task_manager_art.json
+```
+
+Whole-program mode moves preprocessor directives and complete conditional
+regions to the output prefix, then arranges the remaining source tokens
+together in order. Verification compares preprocessed tokens and compiles the
+final translation unit, linking it when it defines `main`. User code is not
+executed, so behavior is `NOT_RUN (NO_FIXTURE)`. If moving directives changes
+macro expansion, token verification fails instead of marking the output valid.
+Relative local header files are not currently resolved in whole-program mode.
+This also requires directives to be safely movable. For example, a conditional
+block inside a function may fail verification if moving it to the prefix changes
+its scope.
+
 The sample choices are `max2`, `min2`, `clamp`, `absdiff`, `gcd` and
 `sum_to_n`. Each includes eight fixed behavior inputs. Ordinary source and
 edited samples have behavior `NOT_RUN` with reason `NO_FIXTURE`. A matching
@@ -113,7 +140,11 @@ A/C/D/E stages and explicit `NOT_RUN` checks.
 
 ## Supported input and verification
 
-Input is one self-contained C11 function using printable ASCII. Parameters,
+Complete-program mode accepts UTF-8 C source with Chinese characters in
+strings, identifiers and the preprocessor prefix. Wide characters occupy two
+grid cells. Empty parameter lists such as `int main()` are accepted as written.
+
+Single-function mode takes one self-contained C11 function using printable ASCII. Parameters,
 local variables (including `static` and `static const`), `__func__` and
 recursion are supported. External declarations, preprocessing dependencies,
 line splicing, trigraphs and real tabs inside tokens are rejected. Predefined
@@ -293,6 +324,9 @@ Only the extracted function is verified, not the entire input program.
 
 `code_fill_ratio` is effective non-space token ink divided by allowed cells
 (the renderer's token coverage), excluding filler comments. It is
-informational only: it does not affect verification or layout. Below 10%,
-it displays `Token density is low; filler comments occupy most allowed cells.`
-It gives no size advice.
+informational only: it does not affect verification or layout. In ordinary
+input mode, below 10% it displays
+`Token density is low; filler comments occupy most allowed cells.` The warning
+applies to either mode. Complete-program mode chooses the canvas from the
+source tokens and uses short block comments to distribute spare space when
+needed.

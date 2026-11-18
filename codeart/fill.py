@@ -1,4 +1,4 @@
-"""Part D: comment filling and final source output.
+"""Part D: source rendering and optional comment filling.
 
 The layout engine (C) decides where every token goes.  This module only
 writes the tokens at their planned cells and fills the remaining fillable
@@ -7,8 +7,9 @@ cells with the two comment forms the verifier (E) accepts:
 * closed block comments ``/*=...=*/`` inside a span;
 * a restricted ``//=...=`` line comment at the tail of the last span.
 
-It never moves, resizes or rewrites a token, and it never writes into a
-hole, a protected blank or another token's cells.
+Where a complete program has spare room, layout can reserve short gaps along
+the token stream. Rendering preserves every token's placement and spelling and
+respects holes and protected blanks.
 """
 
 from __future__ import annotations
@@ -18,9 +19,12 @@ from .contracts import (
     ErrorCode,
     FillOptions,
     LayoutPlan,
+    PROGRAM_FILL_PATTERN,
     RenderedCode,
     SourceModel,
     StageError,
+    character_cells,
+    grid_text,
 )
 
 _BLOCK_MIN_CELLS = 4  # "/*" + body + "*/" is at least four cells
@@ -37,7 +41,7 @@ def _write_token(token, placement, mask, canvas, occupied) -> None:
         raise _render_error(
             f"placement index {placement.token_index} does not match token {token.index}"
         )
-    if token.width != len(token.spelling) or token.width <= 0:
+    if token.width != len(grid_text(token.spelling)) or token.width <= 0:
         raise _render_error(f"token {token.index} has a bad width")
     row, col = placement.row, placement.col
     end = col + token.width
@@ -47,30 +51,35 @@ def _write_token(token, placement, mask, canvas, occupied) -> None:
         raise _render_error(f"token {token.index} covers a non-fillable cell")
     if any(occupied[row][col:end]):
         raise _render_error(f"token {token.index} overlaps another token")
-    for offset, char in enumerate(token.spelling):
-        canvas[row][col + offset] = char
-        occupied[row][col + offset] = 1
+    occupied[row][col:end] = b"\x01" * token.width
+    for char in token.spelling:
+        canvas[row][col] = char
+        cells = character_cells(char)
+        if cells == 2:
+            canvas[row][col + 1] = ""
+        col += cells
 
 
-def _fill_run(canvas, occupied, row, start, end, at_tail, allow_line):
+def _fill_run(canvas, occupied, row, start, end, at_tail, allow_line, pattern):
     """Fill one contiguous free run of a span and return (block, line) cell counts."""
     left_pad = 1 if start > 0 and occupied[row][start - 1] else 0
     right_pad = 1 if end < len(occupied[row]) and occupied[row][end] else 0
     available = (end - start) - left_pad - right_pad
-    if available <= 0:
+    line_comment = at_tail and allow_line
+    delimiter_cells = _LINE_MIN_CELLS if line_comment else _BLOCK_MIN_CELLS
+    if available < delimiter_cells:
         return 0, 0
 
     left = start + left_pad
-    if at_tail and allow_line and available >= _LINE_MIN_CELLS:
-        length = end - left  # the line comment must reach the span end
-        canvas[row][left:end] = "//" + "=" * (length - _LINE_MIN_CELLS)
+    phase = (row * 3 + left) % len(pattern)
+    length = end - left if line_comment else available
+    body_length = length - delimiter_cells
+    body = (pattern * (length // len(pattern) + 2))[phase:phase + body_length]
+    if line_comment:
+        canvas[row][left:end] = "//" + body
         return 0, length
-    if available >= _BLOCK_MIN_CELLS:
-        right = end - right_pad
-        length = right - left
-        canvas[row][left:right] = "/*" + "=" * (length - _BLOCK_MIN_CELLS) + "*/"
-        return length, 0
-    return 0, 0
+    canvas[row][left:left + length] = "/*" + body + "*/"
+    return length, 0
 
 
 def render_source(
@@ -101,6 +110,7 @@ def render_source(
 
     block_cells = 0
     line_cells = 0
+    pattern = PROGRAM_FILL_PATTERN if getattr(model, "program_mode", False) else "="
     for row in range(height):
         ctx.check()
         spans = mask.spans[row]
@@ -118,19 +128,19 @@ def render_source(
                 at_tail = index == last_span and col == end
                 added_block, added_line = _fill_run(
                     canvas, occupied, row, run_start, col, at_tail,
-                    fill_options.allow_line_comments,
+                    fill_options.allow_line_comments, pattern,
                 )
                 block_cells += added_block
                 line_cells += added_line
 
     lines = []
     for row, cells in enumerate(canvas):
-        line = "".join(cells)
+        ctx.check()
         last = -1
-        for col, char in enumerate(line):
+        for col, char in enumerate(cells):
             if char != " " or occupied[row][col]:
                 last = col
-        lines.append(line[: last + 1])
+        lines.append("".join(cells[: last + 1]))
     source_text = "\n".join(lines) + "\n"
 
     allowed_total = sum(1 for row in mask.allowed for cell in row if cell)

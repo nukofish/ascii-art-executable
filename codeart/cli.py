@@ -25,6 +25,7 @@ def main(argv=None) -> int:
     inputs.add_argument("--demo", action="store_true", help="use the fixed smoke fixture")
     inputs.add_argument("--sample", choices=tuple(BUILTIN_FIXTURES), help="verify a real built-in sample")
     inputs.add_argument("--source", type=Path, help="path to a C11 function")
+    inputs.add_argument("--program", type=Path, help="arrange a complete C11 program")
     inputs.add_argument("--file", type=Path, help="extract a function from a complete C file")
     parser.add_argument("--function", help="exact function name for --file")
     parser.add_argument("--shape", choices=("circle", "cat", "code"), default="circle")
@@ -38,7 +39,8 @@ def main(argv=None) -> int:
         parser.error("--scale must be between 1 and 4")
     paths = [(option, path) for option, path in (
         ("--report", args.report), ("--file", args.file),
-        ("--source", args.source), ("--output", args.output),
+        ("--program", args.program), ("--source", args.source),
+        ("--output", args.output),
     ) if path is not None]
     try:
         for (left_option, left), (right_option, right) in combinations(paths, 2):
@@ -51,7 +53,8 @@ def main(argv=None) -> int:
     selection = select_builtin(args.sample) if args.sample else None
 
     try:
-        source = DEMO_SOURCE if args.demo else selection.fixture.source if selection else (args.file or args.source).read_bytes().decode("utf-8")
+        input_path = args.file or args.program or args.source
+        source = DEMO_SOURCE if args.demo else selection.fixture.source if selection else input_path.read_bytes().decode("utf-8")
     except (OSError, UnicodeError) as exc:
         parser.exit(2, f"Cannot read source: {exc}\n")
 
@@ -79,7 +82,8 @@ def main(argv=None) -> int:
     if args.demo:
         print("Integration demo: real B mask, simulated A/C/D/E. Checks are not run.", file=sys.stderr)
     request = GenerationRequest(
-        source, ShapeSpec(args.shape, "CODE" if args.shape == "code" else None), fixtures=selection,
+        source, ShapeSpec(args.shape, "CODE" if args.shape == "code" else None),
+        fixtures=selection, program_mode=args.program is not None,
     )
     request = replace(request, layout_options=replace(
         request.layout_options, initial_scale=args.scale,

@@ -3,6 +3,7 @@
 from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
 import json
+import shutil
 from threading import Event, Thread
 from time import monotonic, sleep
 from urllib.error import HTTPError
@@ -72,6 +73,21 @@ def test_builtin_selection_requires_matching_source():
     assert make_request({"source": sample.source}).fixtures is None
 
 
+def test_whole_program_mode_is_explicit_and_exclusive_with_extraction():
+    request = make_request({
+        "source": "#include <stdio.h>\nint main(void) { return 0; }\n",
+        "program_mode": True,
+    })
+    assert request.program_mode is True
+    assert request.fixtures is None
+    with pytest.raises(ValueError, match="Choose whole-program mode"):
+        make_request({
+            "source": "int main(void) { return 0; }",
+            "program_mode": True,
+            "file_mode": True,
+        })
+
+
 @pytest.mark.parametrize("payload", [
     {}, {"source": "x", "scale": 0}, {"source": "x", "scale": float("nan")},
     {"source": "x", "scale": True}, {"source": "x", "shape": "ring"},
@@ -101,6 +117,44 @@ def test_page_assets_and_report_download(web_server):
     assert "attachment" in headers["Content-Disposition"]
     report, _ = call(base, f"/api/jobs/{identifier}/report.json")
     assert json.loads(report)["result"] == job["result"]
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")
+def test_web_full_program_downloads_the_verified_complete_source():
+    server = create_server(0)
+    worker = Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    source_text = (
+        "#include <stdio.h>\n"
+        "#define VALUE 23\n"
+        "static int helper(void) { return VALUE; }\n"
+        'int main() { printf("分数：%d\\n", helper()); return 0; }\n'
+    )
+    try:
+        data, _ = call(base, "/api/generate", {
+            "source": source_text, "program_mode": True, "shape": "cat",
+        })
+        identifier = json.loads(data)["id"]
+        job = wait_result(base, identifier)
+        assert job["program_mode"] is True
+        assert job["result"]["program_mode"] is True
+        prefix = "#include <stdio.h>\n#define VALUE 23\n\n\n"
+        assert job["result"]["preamble_text"] == prefix
+        assert job["result"]["source_text"].startswith(prefix)
+        assert job["result"]["artwork_character_widths"] == {"分": 2, "数": 2, "：": 2}
+        assert all(
+            job["result"]["checks"][name]["status"] == "PASS"
+            for name in ("token", "geometry", "compile")
+        )
+        assert job["result"]["checks"]["behavior"]["status"] == "NOT_RUN"
+        downloaded, _ = call(base, f"/api/jobs/{identifier}/source.c")
+        assert downloaded.decode("utf-8") == job["result"]["source_text"]
+    finally:
+        server.shutdown()
+        server.jobs.shutdown()
+        server.server_close()
+        worker.join()
 
 
 @pytest.mark.parametrize(("case", "status", "verified"), [

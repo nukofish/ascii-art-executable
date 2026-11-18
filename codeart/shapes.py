@@ -362,9 +362,10 @@ def _in_triangle(u: float, v: float, tri: Sequence[tuple[float, float]]) -> bool
 
 # cat geometry (normalised u/v; v = -1 is the top edge)
 _CAT_HEAD = (0.0, 0.12, 0.95, 0.80)          # cx, cy, rx, ry
+# Keep the outer bases close to the head while retaining narrow, usable tips.
 _CAT_EARS = (
-    ((-0.62, -1.05), (-0.98, -0.28), (-0.24, -0.46)),
-    ((0.62, -1.05), (0.98, -0.28), (0.24, -0.46)),
+    ((-0.62, -1.065), (-0.83, -0.28), (-0.24, -0.46)),
+    ((0.62, -1.065), (0.83, -0.28), (0.24, -0.46)),
 )
 _CAT_EYES = ((-0.33, -0.02, 0.17, 0.15), (0.33, -0.02, 0.17, 0.15))
 _CAT_NOSE = (0.0, 0.30, 0.09, 0.06)

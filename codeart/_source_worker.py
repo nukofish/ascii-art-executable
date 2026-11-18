@@ -33,11 +33,19 @@ class Location:
         return cls(token["line"], token["column"])
 
     @classmethod
-    def from_cursor(cls, cursor):
+    def from_cursor(cls, cursor, utf8_lines=()):
         location = cursor.location
         if location is None or location.line <= 0:
             return None
-        return cls(location.line, location.column)
+        return cls(location.line, _character_column(utf8_lines, location))
+
+
+def _character_column(utf8_lines, location):
+    """Convert libclang's UTF-8 byte column to a one-based character column."""
+    if 0 < location.line <= len(utf8_lines) and location.column > 0:
+        prefix = utf8_lines[location.line - 1][:location.column - 1]
+        return len(prefix.decode("utf-8", errors="ignore")) + 1
+    return location.column
 
 
 def reject(message, location=None, code="UNSUPPORTED_SOURCE"):
@@ -86,18 +94,18 @@ def _index():
     return Index.create()
 
 
-def _check_tokens(tokens):
+def _check_tokens(tokens, *, program_mode=False):
     """Reject spellings that the pipeline cannot reproduce in a character grid."""
     for token in tokens:
         if token["is_comment"]:
             continue
         spelling = token["spelling"]
         location = Location.from_token(token)
-        if spelling in ("#", "%:"):
+        if spelling in ("#", "%:") and not program_mode:
             reject("Preprocessing directives are unsupported", location)
         if token["kind"] == "KEYWORD" and spelling in EXTENSION_KEYWORDS:
             reject("Compiler extensions are unsupported: " + spelling, location)
-        if spelling in PREDEFINED_MACROS:
+        if spelling in PREDEFINED_MACROS and not program_mode:
             reject("Predefined macro use is unsupported: " + spelling, location)
         if spelling in FUNCTION_NAME_EXTENSIONS:
             reject("Compiler extensions are unsupported: " + spelling, location)
@@ -150,6 +158,8 @@ def process(request):
     text = request["text"]
     # A virtual final LF satisfies strict C11 parsing without changing source positions.
     parsing_text = text if text.endswith("\n") else text + "\n"
+    utf8 = parsing_text.encode("utf-8")
+    utf8_lines = () if parsing_text.isascii() else utf8.split(b"\n")
     filename = "input.c"
     index = _index()
     tu = index.parse(
@@ -159,12 +169,37 @@ def process(request):
     )
     tokens = []
     for token in tu.get_tokens(extent=tu.cursor.extent):
-        spelling = parsing_text[token.extent.start.offset:token.extent.end.offset]
+        if request["mode"] == "program" and (
+            token.location.file is None or token.location.file.name != filename
+        ):
+            continue
+        spelling = utf8[token.extent.start.offset:token.extent.end.offset].decode("utf-8")
         tokens.append(dict(kind=token.kind.name, spelling=spelling,
-                           line=token.location.line, column=token.location.column,
+                           line=token.location.line,
+                           column=_character_column(utf8_lines, token.location),
                            is_comment=token.kind == clang.TokenKind.COMMENT))
     if request["mode"] == "lex":
         return {"tokens": tokens}
+
+    if request["mode"] == "program":
+        _check_tokens(tokens, program_mode=True)
+        for diagnostic in tu.diagnostics:
+            if diagnostic.severity >= clang.Diagnostic.Error:
+                code = "INVALID_SOURCE"
+                if "undeclared" in diagnostic.spelling or "implicit function" in diagnostic.spelling:
+                    code = "UNSUPPORTED_SOURCE"
+                location = diagnostic.location
+                lines = utf8_lines if location.file and location.file.name == filename else ()
+                reject(diagnostic.spelling, Location.from_cursor(diagnostic, lines), code)
+        has_main = any(
+            child.kind == clang.CursorKind.FUNCTION_DECL
+            and child.spelling == "main"
+            and child.is_definition()
+            and child.location.file
+            and child.location.file.name == filename
+            for child in tu.cursor.get_children()
+        )
+        return {"tokens": tokens, "has_main": has_main}
 
     _check_tokens(tokens)
     function = _check_declarations(tu, clang, filename)

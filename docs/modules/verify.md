@@ -36,21 +36,25 @@ Tests can inject substitutes through the pipeline dependencies.
 
 ## Checks and report fields
 
-- **Token.** E lexes the full generated source and compares the effective
-  tokens after dropping comments. The first difference gives a zero-based
+- **Token.** E compares the effective tokens after dropping comments. For a
+  complete program, the raw comparison covers the artwork. E also compares
+  the preprocessed original and complete output, including the prefix. The first difference gives a zero-based
   index and the original spelling and source position on each side. A side
   that has reached the end is represented by `None`. A token failure leaves
   geometry, compilation, and behavior at `NOT_RUN (TOKEN_NOT_PASS)`. A missing
   lexer or a lexer stage timeout still allows the independent geometry check.
 - **Geometry.** E scans the actual characters to check boundaries, holes,
   protected cells, placements, comment fill rules, and D's position and
-  cell counts. Coverage divides nonblank characters in fillable cells by
+  cell counts. Wide characters occupy two cells in the whole-program canvas.
+  Coverage divides nonblank fillable cells by
   the number of fillable cells. Spaces inside string literals do not
   contribute to coverage. The report counts ink outside the canvas,
   outside the mask, and in holes. Hole leakage also counts toward the
   out-of-bounds total.
 - **Compile.** After the token check passes, E runs an object build using
-  `-std=c11 -pedantic-errors` by default, even if geometry fails. When geometry
+  `-std=c11 -pedantic-errors` by default, even if geometry fails. In whole-program
+  mode the compile step covers the complete output and links it if it defines
+  `main`. The profile accepts old-style empty parameter lists in that mode. When geometry
   passes and the input qualifies for behavior testing, the compile stage also
   builds the original and generated executables with the test wrapper. A build
   failure or compile timeout sets `compile_status=FAIL` and leaves behavior at

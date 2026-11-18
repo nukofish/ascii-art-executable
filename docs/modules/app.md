@@ -7,9 +7,9 @@ pipeline.
 
 ## User flow
 
-Run `python -m codeart.app`, then open its printed loopback address.
-The six sample selections preserve E's explicit fixture identity. Editing a
-sample converts it to ordinary input. Source text, shape and initial scale
+Run `python -m codeart.app`, then open its printed loopback address. New tabs
+default to whole-program mode. The six sample selections preserve E's explicit
+fixture identity. Editing a sample converts it to ordinary input. Source text, shape and initial scale
 are validated on submission. The app supports one active generation and
 retains five runs. Page refresh can reconnect to the active run in the same
 browser tab.
@@ -17,14 +17,26 @@ browser tab.
 File-mode jobs retain the complete input alongside the extracted function.
 Refreshing restores file mode, the selected candidate and its scope notice.
 
+Whole-program mode accepts a complete C11 translation unit in UTF-8,
+including wide characters in strings and identifiers. Preprocessor
+directives and complete conditional sections are
+preserved at the front, followed by two blank lines. The artwork preview fits
+the canvas to the available space. **Copy code** and the download both export
+the complete UTF-8 source. Wide characters in the artwork occupy two cells.
+Verification checks the
+preprocessed token stream and compiles the final source, linking programs with
+`main`. The web app does not execute custom programs, so their behavior status
+is `NOT_RUN`.
+
 The server runs generation in a worker thread and passes a shared Event to
 the pipeline. Cancellation stops work through the module contexts and their
 subprocess runners. Complete-file analysis runs in the same cancellable job
 and shares its generation deadline. Completed artifacts remain available.
 Shutdown requests cancellation and waits for the active pipeline to finish cleanup.
 
-Original text and generated source use the same fixed font. Long lines
-scroll without wrapping. The interface shows each validation state and skip
+Original text and generated source use the bundled monospaced font, with
+system fallback glyphs. The artwork scales to fit while preserving spaces and
+line breaks. The interface shows each validation state and skip
 reason, coverage, grid, actual scale, attempts, elapsed time, diagnostics,
 first token difference and layout attempt history. Verification failures
 are labeled for review, including when partial source can be downloaded.
@@ -36,6 +48,9 @@ only in file mode. The selected function is rechecked by A when generation
 starts; samples and plain `--source` input remain the v1.4 single-function
 path.
 
+To arrange a complete program, enable **Arrange a complete C program** and
+generate. This mode and function extraction are mutually exclusive.
+
 ## HTTP interface
 
 | Method | Path | Purpose |
@@ -43,7 +58,7 @@ path.
 | GET | `/` | Local application |
 | GET | `/api/samples` | Names and exact built-in sources |
 | GET | `/api/environment` | Python, platform, compiler and package versions |
-| POST | `/api/generate` | Submit source, shape, scale, optional sample name, and optional `file_mode` + `function` |
+| POST | `/api/generate` | Submit source, shape, scale, optional sample name, `program_mode`, or `file_mode` + `function` |
 | GET | `/api/jobs/<id>` | Job state, original source and result summary and revision |
 | POST | `/api/prepass` | Locate candidate functions in a complete C file; returns candidates, selection and ignored ranges |
 | POST | `/api/jobs/<id>/cancel` | Request cancellation |
@@ -74,8 +89,8 @@ HTTP 400. The separate `/api/prepass` inspection endpoint is synchronous.
 Snapshots retain `source` as the extracted function and add `input_source`,
 `file_mode` and `function` for page restoration.
 The report includes `ignored_lines` and
-precise same-line `ignored_segments`. Only the extracted function is verified;
-`generate()` and A still accept exactly one self-contained function.
+precise same-line `ignored_segments`. Extraction sends one self-contained
+function to `generate()` for verification.
 
 Reports include `status` (`OK`/`FAILED`/`CANCELLED`) and the font identity
 taken from `mask.font_metrics.font_id`. A failed `--file` extraction keeps the

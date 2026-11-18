@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import re
 
+from .contracts import PROGRAM_FILL_PATTERN, grid_text, is_grid_character
 from .procutil import check_context
 from .shapes import geometry_metrics
 
@@ -14,6 +15,8 @@ _HOLES = {
     "code": ("code_strokes",),
 }
 _FILL_COMMENT = re.compile(r"/\*=*\*/|//=*")
+_PROGRAM_FILL_BODY = f"[{re.escape(PROGRAM_FILL_PATTERN)}]*"
+_PROGRAM_FILL_COMMENT = re.compile(rf"/\*{_PROGRAM_FILL_BODY}\*/|//{_PROGRAM_FILL_BODY}")
 
 
 class _Issues:
@@ -27,7 +30,7 @@ class _Issues:
             self.first_cell = cell
 
 
-def _token_cells(model, plan, rendered, rows, actual_tokens, ctx, issues):
+def _token_cells(model, plan, rendered, lines, rows, actual_tokens, ctx, issues):
     mask = plan.mask
     occupied = [bytearray(mask.width) for _ in range(mask.height)]
     positions = {}
@@ -44,7 +47,8 @@ def _token_cells(model, plan, rendered, rows, actual_tokens, ctx, issues):
             issues.add("placement_order", cell)
         positions[token.index] = cell
         previous = cell
-        if (token.width != len(token.spelling) or token.width <= 0
+        token_cells = grid_text(token.spelling)
+        if (token.width != len(token_cells) or token.width <= 0
                 or not (0 <= row < mask.height and 0 <= col < end <= mask.width)):
             issues.add("placement_bounds", cell)
             continue
@@ -53,11 +57,14 @@ def _token_cells(model, plan, rendered, rows, actual_tokens, ctx, issues):
         if any(occupied[row][col:end]):
             issues.add("placement_overlap", cell)
         occupied[row][col:end] = b"\x01" * token.width
-        if rows[row][col:end] != token.spelling:
+        if rows[row][col:end] != token_cells:
             issues.add("placement_text", cell)
         if actual_tokens is not None:
             actual = actual_tokens[index]
-            if (actual.line - 1, actual.column - 1) != cell:
+            actual_col = actual.column - 1
+            if actual.line == row + 1 and not lines[row].isascii():
+                actual_col = len(grid_text(lines[row][:actual_col]))
+            if (actual.line - 1, actual_col) != cell:
                 issues.add("lexed_position", cell)
     if rendered.position_map != positions:
         issues.add("position_map")
@@ -69,14 +76,14 @@ def _token_cells(model, plan, rendered, rows, actual_tokens, ctx, issues):
     return occupied
 
 
-def _count_filler(text, occupied, allowed, row, counts, issues):
+def _count_filler(text, occupied, allowed, row, counts, issues, grammar):
     """Recognize D's restricted fill grammar outside planned token cells."""
     col = 0
     while col < len(occupied) and col < len(text):
         if occupied[col] or text[col] == " ":
             col += 1
             continue
-        comment = _FILL_COMMENT.match(text, col)
+        comment = grammar.match(text, col)
         if comment is None:
             issues.add("unexpected_filler", (row, col))
             col += 1
@@ -111,8 +118,12 @@ def check_geometry(model, plan, rendered, actual_tokens, ctx):
         issues.add("missing_final_lf")
     if len(parts) != mask.height:
         issues.add("canvas_height")
-    rows = parts[:mask.height] + [""] * max(0, mask.height - len(parts))
-    occupied = _token_cells(model, plan, rendered, rows, actual_tokens, ctx, issues)
+    program_mode = getattr(model, "program_mode", False)
+    grid_rows = [grid_text(line) for line in parts] if program_mode else parts
+    missing = [""] * max(0, mask.height - len(parts))
+    lines = parts[:mask.height] + missing
+    rows = grid_rows[:mask.height] + missing
+    occupied = _token_cells(model, plan, rendered, lines, rows, actual_tokens, ctx, issues)
 
     feature_names = _HOLES.get(mask.kind, ())
     holes = set()
@@ -135,12 +146,16 @@ def check_geometry(model, plan, rendered, actual_tokens, ctx):
     outside_mask = 0
     hole_leakage = 0
     comment_cells = {"block": 0, "line": 0}
-    for row, text in enumerate(parts):
+    grammar = _PROGRAM_FILL_COMMENT if program_mode else _FILL_COMMENT
+    for row, text in enumerate(grid_rows):
         check_context(ctx)
         if len(text) > mask.width:
             issues.add("canvas_width", (row, mask.width))
         for col, char in enumerate(text):
-            if not " " <= char <= "~":
+            if program_mode:
+                if not is_grid_character(char):
+                    issues.add("unsupported_grid_character", (row, col))
+            elif not " " <= char <= "~":
                 issues.add("non_printable_ascii", (row, col))
             if char.isspace():
                 continue
@@ -158,7 +173,7 @@ def check_geometry(model, plan, rendered, actual_tokens, ctx):
                     outside_mask += 1
                     issues.add("ink_outside_mask", (row, col))
         if row < mask.height:
-            _count_filler(text, occupied[row], mask.allowed[row], row, comment_cells, issues)
+            _count_filler(text, occupied[row], mask.allowed[row], row, comment_cells, issues, grammar)
 
     check_context(ctx)
     metrics = geometry_metrics(mask)

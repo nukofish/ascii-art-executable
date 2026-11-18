@@ -69,6 +69,8 @@ def test_procutil_public_surface_is_complete():
 
 
 def test_source_public_surface_is_explicit():
-    assert source.__all__ == ("analyze_source", "can_join", "lex_source", "prepare_profile")
+    assert source.__all__ == (
+        "analyze_program", "analyze_source", "can_join", "lex_source", "prepare_profile",
+    )
     for name in source.__all__:
         assert callable(getattr(source, name)), name

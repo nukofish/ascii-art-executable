@@ -27,7 +27,7 @@ function response(data) {
   return {ok: true, status: 200, json: async () => data};
 }
 
-function openPage(previous, handler, storage = new Map()) {
+function openPage(previous, handler, storage = new Map(), clipboard = {}) {
   const nodes = new Map();
   const get = id => {
     if (!nodes.has(id)) nodes.set(id, element());
@@ -35,6 +35,8 @@ function openPage(previous, handler, storage = new Map()) {
   };
   get("shape").value = "circle";
   get("scale").value = "1";
+  get("program-mode").checked = true;
+  get("copy-source").hidden = true;
   if (previous) storage.set("codeart-job", previous);
   vm.runInNewContext(source, {
     document: {
@@ -42,6 +44,7 @@ function openPage(previous, handler, storage = new Map()) {
     },
     Option: function(text, value) { this.textContent = text; this.value = value; },
     Event: function(type) { this.type = type; },
+    navigator: {clipboard},
     sessionStorage: {
       getItem: key => storage.get(key),
       setItem: (key, value) => storage.set(key, value),
@@ -115,6 +118,7 @@ async function run() {
   assert.equal(failurePage("diagnostics").hidden, false);
   assert.match(failurePage("diagnostics").children[0].textContent, /NO_ELIGIBLE_FUNCTION/);
   assert.equal(failurePage("report").hidden, false);
+  assert.equal(failurePage("copy-source").hidden, true);
 
   const calls = [];
   let acceptSubmission;
@@ -128,6 +132,7 @@ async function run() {
   });
   await flush();
   page("source").value = job.input_source;
+  page("program-mode").checked = false;
   page("file-mode").checked = true;
   const pending = page("generator").dispatchEvent({type: "submit", preventDefault() {}});
   await flush();
@@ -155,6 +160,45 @@ async function run() {
   assert.equal(refreshed("file-scope").hidden, false);
   await refreshed("function").dispatchEvent({type: "change"});
   assert.equal(storage.get("codeart-job"), undefined);
+
+  const program = completedJob();
+  program.file_mode = false;
+  program.program_mode = true;
+  program.result.program_mode = true;
+  program.result.preamble_text = "#include <stdio.h>\n\n\n";
+  const artwork = program.result.source_text;
+  program.result.source_text = program.result.preamble_text + artwork;
+  let copied;
+  const programPage = openPage(program.id, async () => response(program), new Map(), {
+    async writeText(value) { copied = value; }
+  });
+  await flush();
+  assert.equal(programPage("program-mode").checked, true);
+  assert.equal(programPage("program-scope").hidden, false);
+  assert.equal(programPage("file-controls").hidden, true);
+  assert.equal(programPage("output").textContent, artwork);
+  assert.equal(programPage("output-preamble").textContent, program.result.preamble_text);
+  await programPage("copy-source").dispatchEvent({type: "click"});
+  assert.equal(copied, program.result.source_text);
+
+  let submittedPayload;
+  const programStorage = new Map();
+  const programSubmit = openPage(null, async (url, options = {}) => {
+    if (url === "/api/generate") {
+      submittedPayload = JSON.parse(options.body);
+      return response({id: program.id});
+    }
+    return response(program);
+  }, programStorage);
+  await flush();
+  assert.equal(programSubmit("program-mode").checked, true);
+  assert.equal(programSubmit("sample").value, "");
+  programSubmit("source").value = program.input_source;
+  await programSubmit("generator").dispatchEvent({type: "submit", preventDefault() {}});
+  await flush();
+  assert.equal(submittedPayload.program_mode, true);
+  assert.equal(submittedPayload.file_mode, false);
+  assert.equal(programStorage.get("codeart-job"), program.id);
   console.log("5 web application regressions passed");
 }
 
