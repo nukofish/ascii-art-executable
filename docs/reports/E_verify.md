@@ -62,8 +62,8 @@ PY
 
 ## v1.5 budget and coverage decision
 
-E recommends retaining the existing limits. Coverage applies to the fixed
-fixtures at **85% total** and **70% for each cat ear**. Keep 5 s for input
+Retain the existing limits. Coverage applies to the fixed fixtures at
+**85% total** and **70% for each cat ear**. Keep 5 s for input
 analysis and 5 s for layout, 5 s for output lexing and 5 s per compiler
 invocation, and 2 s per behavior executable's batch of eight inputs. The
 generation budget stays at 30 s and the fixed regression budget at 180 s
@@ -82,9 +82,11 @@ pytest 9.2.0.
   89.15%. The largest per-case compile and behavior phase totals were
   0.095 s and 0.332 s. These phase totals cover multiple builds or executions
   when applicable.
-- The [long-token CLI example](README.md#automatic-growth-demonstration)
-  grew from the default height of 32 to 41 rows through the initial estimator
-  and passed token, geometry, and compilation. The [oversized fixture probe](#behavior-skip-cases)
+- The long-token CLI example grew from the default height of 32 to 41 rows
+  through the initial estimator and passed token, geometry, and compilation.
+  See the [82 × 41 output](scaled/case_auto_grow_circle_h41_s1.28125.c) and its
+  [JSON report](scaled/case_auto_grow_circle_h41_s1.28125.json).
+  The [oversized fixture probe](#behavior-skip-cases)
   confirmed that at 480 × 240 those checks pass and behavior reports
   `NOT_RUN (OUTPUT_TOO_LARGE)` with zero comparisons.
 - The boundary regression command below passed 50 tests. The timeout and
@@ -109,7 +111,9 @@ python -m pytest -q tests/test_app.py tests/test_prepass.py tests/test_web_app.p
   tests/test_cli.py::test_cli_prepass_timeout_keeps_common_failure_report --tb=short
 ```
 
-F's confirmation of the proposed values and the Web file-mode end-to-end
-budget and cancellation behavior is pending. Web file-mode generation shares
-the 30 s budget with prepass. The CLI's `--file` command has a separate
-prepass budget.
+F signed off on item 12 and the fixed-fixture thresholds of **85% overall**
+and **70% for each cat ear**. Web file-mode prepass and generation share one
+**30 s** budget and the same cancellation signal. In Chromium, cancelling
+during prepass ended the job as `CANCELLED` with all four checks
+`NOT_RUN (CANCELLED)`. Web **Find functions** and CLI `--file` prepass have
+separate budgets. [F browser acceptance and sign-off in #53](https://github.com/nukofish/ascii-art-executable/pull/53)
