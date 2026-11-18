@@ -26,9 +26,9 @@
       "cols": 192,
       "rows": 96,
       "bbox_ratio": 1.01087,
-      "allowed_cells": 11898,
-      "spans_total": 150,
-      "rows_with_multiple_spans": 39,
+      "allowed_cells": 11900,
+      "spans_total": 148,
+      "rows_with_multiple_spans": 38,
       "features": {
         "eye_left": {
           "cells": 371,

@@ -18,6 +18,7 @@ from codeart import (  # noqa: E402
     NOTCH_CENTER_FRACTION,
     NOTCH_MIN_WINDOW_CELLS,
     NOTCH_WINDOW_FRACTION,
+    SLIVER_HOLE_MAX_CELLS,
     FontMetrics,
     Mask,
     ShapeError,
@@ -116,6 +117,63 @@ def test_cat_features_meet_acceptance():
         assert metrics["nose_cells"] >= 2
         assert metrics["ear_gap_rows"] >= 2, metrics["ear_gap_rows"]
         assert len(metrics["holes"]) == 3          # two eyes + nose
+
+
+def test_cat_has_exactly_three_holes_at_every_height():
+    """Seam slivers used to add phantom 1-2 cell holes at 53 heights.
+
+    E's ``cat_features`` check requires exactly three holes (two eyes + nose)
+    for every height >= 32.  The ear triangles and the head ellipse are
+    rasterised independently, so at some heights their union leaves an enclosed
+    one- or two-cell gap; without closure the mask reports five holes and a
+    normal program fails verification.  The smallest design hole anywhere in
+    32..256 is the 8-cell nose, so four is a safe floor.
+    """
+    assert SLIVER_HOLE_MAX_CELLS == 3
+    failures = []
+    for rows in range(32, 257):
+        sizes = [hole["cells"] for hole in geometry_metrics(make("cat", rows))["holes"]]
+        if len(sizes) != 3 or min(sizes, default=0) < 4:
+            failures.append((rows, sorted(sizes)))
+    assert not failures, f"heights with a non-three-hole cat: {failures}"
+
+
+@pytest.mark.parametrize(("rows", "expected", "slivers"), [
+    (72, [42, 208, 208], ((24, 13), (24, 14), (24, 129), (24, 130))),
+    (78, [52, 244, 244], ((26, 15), (26, 140))),
+    (96, [74, 371, 371], ((32, 19), (32, 172))),
+])
+def test_cat_seam_slivers_are_closed_at_known_heights(rows, expected, slivers):
+    """Pin the three previously failing heights and their sliver coordinates."""
+    mask = make("cat", rows)
+    metrics = geometry_metrics(mask)
+    assert sorted(hole["cells"] for hole in metrics["holes"]) == expected
+    for cell in slivers:
+        assert mask.allowed[cell[0]][cell[1]], cell
+    # Spans are the renderer's definition of fillability: after closing they
+    # must still rebuild ``allowed`` cell for cell.
+    assert allowed_from_spans(mask.width, mask.spans) == [
+        list(row) for row in mask.allowed
+    ]
+    # The design holes are untouched.
+    for name in ("eye_left", "eye_right", "nose"):
+        cells = mask.features[name]
+        assert cells
+        assert all(not mask.allowed[row][col] for row, col in cells)
+
+
+def test_closing_never_fills_a_design_hole_below_the_verified_range():
+    """At tiny heights an eye or the nose can be <= 3 cells; keep it a hole.
+
+    E only verifies the cat at height >= 32, but C can ask B for smaller masks
+    while it grows a layout.  The protected-cell guard must stop the sliver
+    closing from turning those real (if tiny) design holes into ink cells.
+    """
+    for rows in range(1, 32):
+        mask = make("cat", rows)
+        for name in ("eye_left", "eye_right", "nose"):
+            cells = mask.features[name]
+            assert all(not mask.allowed[row][col] for row, col in cells), (rows, name)
 
 
 # ------------------------------------------- v1.5 notch and boundary cells --
