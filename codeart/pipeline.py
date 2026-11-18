@@ -1,6 +1,7 @@
 """Assemble and run the independent analysis, layout, render and verify stages."""
 
 from dataclasses import replace
+from functools import partial
 from importlib import import_module
 from threading import Event
 from time import monotonic
@@ -35,7 +36,7 @@ def production_deps() -> PipelineDeps:
     return PipelineDeps(
         analyzer=modules["source"].analyze_source,
         mask_builder=build_mask,
-        join_checker=modules["source"].can_join,
+        join_checker=partial(modules["source"].can_join, checked_run=True),
         layout_engine=modules["layout"].fit_layout,
         renderer=modules["fill"].render_source,
         verifier=modules["verify"].verify,

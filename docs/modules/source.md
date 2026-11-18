@@ -12,7 +12,7 @@ other without a separator. Nothing here chooses a shape, a size or a comment.
 | --- | --- | --- |
 | `analyze_source` | `(text, profile=None, *, ctx=None) -> SourceModel` | Validate one self-contained C11 function; raise `StageError` with a shared `Diagnostic` on failure. |
 | `analyze_program` | `(text, profile=None, *, ctx=None) -> SourceModel` | Validate a complete C11 translation unit and return its non-directive token stream with preprocessor sections recorded for the output prefix. |
-| `can_join` | `(run_tokens, next_token, profile=None) -> bool` | Re-lex the whole contiguous run plus the candidate and compare kinds and spellings. |
+| `can_join` | `(run_tokens, next_token, profile=None, *, checked_run=False) -> bool` | Check whether adjoining tokens preserves their kinds and raw spellings. |
 | `lex_source` | `(text, *, ctx) -> tuple[LexedToken, ...]` | Raw token adapter E reuses for the generated source. |
 | `prepare_profile` | `(profile) -> VerificationProfile` | Bind A's lexer to the profile so E compares with the same lexer. |
 
@@ -99,9 +99,14 @@ raw text. Token widths are measured in grid cells.
 
 ## The `can_join` decision
 
-`can_join(run_tokens, next_token, profile)` concatenates the spellings of the
-current run and the candidate, re-lexes that text with the same flags, and
-compares the result with the expected `(kind, spelling)` pairs. Consequences:
+By default `can_join` re-lexes the complete run plus the candidate and compares
+the result with the expected `(kind, spelling)` pairs. The production pipeline
+sets `checked_run=True` because Clang has already classified the input tokens
+and layout builds the run one checked join at a time. In that case the lexer
+starts at the last standalone delimiter (`()[]{},;`) or at the start of the
+run if there is none. Keeping the delimiter lets different runs reuse the
+same cached suffix. A candidate delimiter can join directly unless it could
+complete a trigraph.
 
 - `f` + `(` joins; `a` + `)` joins; `)` + `{` joins.
 - `+` + `+`, `/` + `*`, `/` + `/`, `<` + `<`, `-` + `>` do not join: they would

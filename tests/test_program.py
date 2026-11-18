@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from codeart import source as source_module
-from codeart.contracts import PROGRAM_FILL_PATTERN, GenerationRequest, ShapeSpec
+from codeart.contracts import PROGRAM_FILL_PATTERN, GenerationRequest, LayoutOptions, ShapeSpec
 from codeart.pipeline import generate
 
 
@@ -82,6 +82,30 @@ def test_complete_program_is_arranged_and_runs_identically(tmp_path):
         [str(generated_binary)], check=True, capture_output=True, text=True, timeout=5,
     )
     assert generated_run.stdout == original_run.stdout == "9\n"
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")
+@pytest.mark.parametrize("repeats", [120, 180], ids=["244-lines", "364-lines"])
+def test_complete_program_fits_five_second_layout_budget(repeats):
+    lines = ["int main(void) {", "    unsigned a = 1u, b = 0u;"]
+    for index in range(repeats):
+        lines.extend([
+            f"    b = b + a * {index}u + ({index}u % 7u);",
+            f"    if (b > {index * 10}u) {{ a = a - {index}u; }} "
+            f"else {{ a = a + {index}u; }}",
+        ])
+    lines.extend(["    return (a + b) % 100u;", "}"])
+    source = "\n".join(lines) + "\n"
+
+    result = generate(GenerationRequest(
+        source, ShapeSpec("cat"), layout_options=LayoutOptions(layout_timeout_s=5),
+        program_mode=True,
+    ))
+
+    assert result.status.value == "OK", result.diagnostics
+    assert result.verification.token_status.value == "PASS"
+    assert result.verification.geometry_status.value == "PASS"
+    assert result.verification.compile_status.value == "PASS"
 
 
 @pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")
