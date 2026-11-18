@@ -21,10 +21,13 @@ from `codeart.contracts`; never import `codeart._source_lexer` or
 
 ## Input limits
 
-One function definition, no `main`, no top-level declarations, no other
-functions. Parameters, automatic locals, `goto` labels and recursion are inside
-the supported scope. Each rejection uses a shared `ErrorCode` and, when the
-position is known, a one-based line and column.
+The single-function entry point accepts one self-contained definition and
+does not require `main`. The separate complete-file entry point excludes
+`main` from eligible extraction candidates. Parameters, local variables
+(including `static` and `static const`), `__func__`, `goto` labels and
+recursion are supported. Additional top-level declarations and dependencies
+on external functions or objects are rejected. Each rejection uses a shared
+`ErrorCode` and, when the position is known, a one-based line and column.
 
 | Input | Result | Location |
 | --- | --- | --- |
@@ -36,9 +39,8 @@ position is known, a one-based line and column.
 | Preprocessing directive (`#`, `%:`) | `UNSUPPORTED_SOURCE` | the directive token |
 | Predefined macro name from the table (`__LINE__`, `__FILE__`, `__COUNTER__`, …) | `UNSUPPORTED_SOURCE` | the identifier |
 | Any other implementation macro (`__INT_MAX__`, `__BYTE_ORDER__`, …) | `UNSUPPORTED_SOURCE` | the macro instantiation |
-| Function-name builtin (`__func__`, `__FUNCTION__`, `__PRETTY_FUNCTION__`) | `UNSUPPORTED_SOURCE` | the identifier |
+| Function-name extension (`__FUNCTION__`, `__PRETTY_FUNCTION__`, `__FUNCSIG__`) | `UNSUPPORTED_SOURCE` | the identifier |
 | GNU extension keyword (`__asm__`, `__attribute__`, `__extension__`, `__int128`, …) | `UNSUPPORTED_SOURCE` | the keyword |
-| Static local variable (including `static const`) | `UNSUPPORTED_SOURCE` | the declaration |
 | External function, external object, `extern` declaration | `UNSUPPORTED_SOURCE` | first reference or declaration |
 | More than one definition, or a non-function top-level declaration | `UNSUPPORTED_SOURCE` / `INVALID_SOURCE` | the offending node |
 | Syntax error under `-std=c11 -pedantic-errors` | `INVALID_SOURCE` | first compiler error |

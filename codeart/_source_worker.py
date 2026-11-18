@@ -67,10 +67,9 @@ PREDEFINED_MACROS = frozenset({
     "__has_attribute", "__has_extension", "__has_cpp_attribute",
 })
 
-# Predefined identifiers, not macros: they are valid only with C11 semantics
-# that the layout stage would change, so the profile rejects them explicitly.
-FUNCTION_NAME_BUILTINS = frozenset({
-    "__func__", "__FUNCTION__", "__PRETTY_FUNCTION__", "__FUNCSIG__",
+# C11 defines __func__; these spellings are compiler-specific extensions.
+FUNCTION_NAME_EXTENSIONS = frozenset({
+    "__FUNCTION__", "__PRETTY_FUNCTION__", "__FUNCSIG__",
 })
 
 # Only rejected when libclang lexes them as keywords. Spelled as an ordinary
@@ -100,8 +99,8 @@ def _check_tokens(tokens):
             reject("Compiler extensions are unsupported: " + spelling, location)
         if spelling in PREDEFINED_MACROS:
             reject("Predefined macro use is unsupported: " + spelling, location)
-        if spelling in FUNCTION_NAME_BUILTINS:
-            reject("Function-name builtins are unsupported", location)
+        if spelling in FUNCTION_NAME_EXTENSIONS:
+            reject("Compiler extensions are unsupported: " + spelling, location)
         if "\t" in spelling:
             reject("Real tab characters inside tokens are unsupported", location)
         if "\r" in spelling or "\n" in spelling:
@@ -131,9 +130,6 @@ def _check_declarations(tu, clang, filename):
     nodes = list(function.walk_preorder())
     local_declarations = {node.hash for node in nodes if node.kind.is_declaration()}
     for node in nodes:
-        if node.kind == clang.CursorKind.VAR_DECL and node.storage_class == clang.StorageClass.STATIC:
-            reject("Static local variables retain state across calls and are unsupported",
-                   Location.from_cursor(node))
         if node.kind in (clang.CursorKind.FUNCTION_DECL, clang.CursorKind.VAR_DECL):
             if node.storage_class == clang.StorageClass.EXTERN or (
                 node.kind == clang.CursorKind.FUNCTION_DECL and node != function

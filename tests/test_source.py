@@ -33,14 +33,11 @@ def test_shared_contracts_and_missing_final_newline():
     "int f(void) { return ext; }",
     "int f(void) { extern int g(void); return g(); }",
     "int f(void) { extern int x; return x; }",
-    "int f(void) { static int c=0; return ++c; }",
-    "int f(void) { static const int c=1; return c; }",
     "int x; int f(void) { return x; }",
     "int g(void); int f(void) { return g(); }",
     "int f(void) { return __LINE__; }",
     "int f(void) { return __INT_MAX__; }",
     "int f(void) { return __TIMESTAMP__[0]; }",
-    "int f(void) { return __func__[0]; }",
     "int f(void) { return \"a\tb\"[1]; }",
     "int f(void) { ret\\\nurn 0; }",
     "int f(void) { /* 中文 */ return 0; }",
@@ -156,3 +153,18 @@ def test_external_diagnostics_use_stable_codes(text):
     assert diagnostic.stage == "analysis"
     assert diagnostic.line == 1
     assert diagnostic.column > 0
+
+
+@pytest.mark.parametrize("text", [
+    "int f(void) { static int c=0; return ++c; }",
+    "int f(void) { static const int c=1; return c; }",
+    "int main(void) { return (int)sizeof(__func__); }",
+])
+def test_standard_local_declarations_and_function_name_survive_generation(text):
+    result = generate(GenerationRequest(text, ShapeSpec("circle")))
+    assert not result.diagnostics, result.diagnostics
+    report = result.verification
+    assert (report.token_status.value, report.geometry_status.value,
+            report.compile_status.value, report.behavior_status.value) == (
+                "PASS", "PASS", "PASS", "NOT_RUN",
+            )
