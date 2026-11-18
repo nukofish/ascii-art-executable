@@ -115,8 +115,15 @@ after height rounding, so a base of 32 rounded to 33 rows reports
 ## Cancellation and time budgets
 
 A single layout-stage budget is derived once, before the retry loop, so every
-attempt shares it and a new attempt never resets the clock. The budget is
-tracked in two domains at once:
+attempt shares it and a new attempt never resets the clock.
+
+`layout_timeout_s` defaults to **60 s**. The generation request's overall
+deadline still caps how long layout can run. The production join checker
+[reuses lexing results after standalone delimiters](source.md#the-can_join-decision).
+The 244- and 364-line whole-program regressions explicitly use a 5 s layout
+budget to exercise that optimization.
+
+The budget is tracked in two domains at once:
 
 ```
 stage_deadline      = min(clock() + layout_timeout_s, ctx.deadline)

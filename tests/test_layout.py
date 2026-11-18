@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import time
 from dataclasses import replace
 from threading import Event
@@ -25,6 +26,20 @@ from codeart.contracts import (
 )
 from codeart.fill import render_source
 from codeart.layout import fit_layout
+from codeart.source import analyze_source, can_join
+
+
+CLANG = shutil.which("clang")
+try:
+    import clang.cindex  # noqa: F401
+
+    HAS_LIBCLANG = True
+except Exception:
+    HAS_LIBCLANG = False
+requires_clang = pytest.mark.skipif(
+    CLANG is None or not HAS_LIBCLANG,
+    reason="Clang and libclang are required",
+)
 
 
 def context(seconds=30):
@@ -441,6 +456,34 @@ def test_layout_budget_is_not_reset_for_the_second_attempt():
     assert history[-1].reason.startswith(ErrorCode.LAYOUT_TIMEOUT.value)
     assert 0.01 <= clock["t"] < 0.02
     assert clock["t"] == pytest.approx(0.011)
+
+
+# --------------------------------------------------- default layout budget
+
+
+@requires_clang
+def test_default_layout_budget_fits_a_real_sized_program():
+    """Exercise the default budget with a large function and the public join checker."""
+    lines = ["int big(int seed) {", "    int a = seed;", "    int b = 0;"]
+    for i in range(120):
+        lines += [f"    b = b + a * {i} + ({i} % 7);",
+                  f"    if (b > {i*10}) {{ a = a - {i}; }} else {{ a = a + {i}; }}"]
+    lines += ["    return a + b;", "}"]
+    program = "\n".join(lines) + "\n"
+
+    model = analyze_source(program)
+    assert len(model.tokens) > 4000  # the measured 4463-token / ~243-line case
+
+    plan = fit_layout(model, ShapeSpec("circle"), LayoutOptions(),
+                      mask_builder=build_mask, join_checker=can_join,
+                      ctx=context(120))
+
+    assert [p.token_index for p in plan.placements] == [t.index for t in model.tokens]
+    assert len(plan.placements) == len(model.tokens)
+
+
+def test_default_layout_budget_stays_at_sixty_seconds():
+    assert LayoutOptions().layout_timeout_s == 60.0
 
 
 # ------------------------------------------------------- legacy run contexts

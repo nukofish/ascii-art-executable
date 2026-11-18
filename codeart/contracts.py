@@ -225,13 +225,19 @@ class AttemptRecord:
 
 @dataclass(frozen=True)
 class LayoutOptions:
+    """Layout stage limits.
+
+    ``layout_timeout_s`` defaults to 60 s. The enclosing pipeline deadline
+    can impose a shorter budget.
+    """
+
     base_height_rows: int = 32
     initial_scale: float = 1.0
     growth_factor: float = 1.25
     max_attempts: int = 12
     max_columns: int = 800
     max_rows: int = 600
-    layout_timeout_s: float = 5.0
+    layout_timeout_s: float = 60.0
     font_metrics: FontMetrics = field(default_factory=FontMetrics)
 
 

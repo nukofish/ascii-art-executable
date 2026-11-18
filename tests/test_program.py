@@ -97,6 +97,7 @@ def test_complete_program_fits_five_second_layout_budget(repeats):
     lines.extend(["    return (a + b) % 100u;", "}"])
     source = "\n".join(lines) + "\n"
 
+    source_module._can_join_cached.cache_clear()
     result = generate(GenerationRequest(
         source, ShapeSpec("cat"), layout_options=LayoutOptions(layout_timeout_s=5),
         program_mode=True,

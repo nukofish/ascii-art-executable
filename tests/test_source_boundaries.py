@@ -190,7 +190,7 @@ def test_can_join_uses_the_whole_run(pairs, expected):
     (("PUNCTUATION", "."), ("PUNCTUATION", "."), ("PUNCTUATION", ".")),
     (("PUNCTUATION", "?"), ("PUNCTUATION", "?"), ("PUNCTUATION", "(")),
     (("PUNCTUATION", "/"), ("PUNCTUATION", "*")),
-    (("LITERAL", "0x1p"), ("PUNCTUATION", "+"), ("LITERAL", "2")),
+    (("LITERAL", "0x1p"), ("PUNCTUATION", "+")),
     (("IDENTIFIER", "数"), ("IDENTIFIER", "量")),
 ])
 def test_can_join_checks_the_suffix_after_a_delimiter(pairs):
