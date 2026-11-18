@@ -282,15 +282,30 @@ def analyze_source(text: str, profile: VerificationProfile | None = None, *, ctx
                        reply["function_name"], reply["signature"], tuple(comments))
 
 
-def analyze_program(text: str, profile: VerificationProfile | None = None, *, ctx=None):
-    """Analyze a complete C11 translation unit while separating its raw prefix."""
-    profile = profile or VerificationProfile()
-    # Clang's -pedantic-errors promotes this even with -Wno-error=strict-prototypes.
-    profile = replace(profile, flags=(*profile.flags, "-Wno-strict-prototypes"))
-    ctx = ctx or RunContext(monotonic() + profile.lex_timeout)
-    ctx = _AnalysisContext(ctx, profile.lex_timeout)
-    normalized = _normalize_program(text, ctx)
-    if sys.platform == "darwin" and "-isysroot" not in profile.flags:
+def _program_profile(profile, ctx):
+    flags = (*profile.flags, "-Wno-strict-prototypes")
+    try:
+        if not any(flag == "-resource-dir" or flag.startswith("-resource-dir=") for flag in flags):
+            # The wheel ships libclang separately from Clang's built-in headers.
+            resource = run_command(
+                [profile.compiler, *flags, "-print-resource-dir"],
+                cwd=Path.cwd(), env=None, ctx=ctx, timeout=profile.lex_timeout,
+            )
+            resource_dir = resource.stdout.strip()
+            if resource.returncode != 0 or not resource_dir:
+                raise DependencyUnavailable("Cannot locate Clang's resource directory")
+            flags += ("-resource-dir", resource_dir)
+    except DependencyUnavailable as exc:
+        raise StageError(Diagnostic(ErrorCode.DEPENDENCY_UNAVAILABLE, "analysis", str(exc))) from exc
+    except CommandTimedOut as exc:
+        raise StageError(Diagnostic(
+            ErrorCode.ANALYSIS_TIMEOUT, "analysis", "Clang resource directory lookup timed out"
+        )) from exc
+    except WorkStopped as exc:
+        ctx.check()
+        raise StageError(Diagnostic(ErrorCode(exc.reason), "analysis", str(exc))) from exc
+
+    if sys.platform == "darwin" and "-isysroot" not in flags:
         sdkroot = os.environ.get("SDKROOT")
         if not sdkroot:
             try:
@@ -310,8 +325,17 @@ def analyze_program(text: str, profile: VerificationProfile | None = None, *, ct
                 ctx.check()
                 raise StageError(Diagnostic(ErrorCode(exc.reason), "analysis", str(exc))) from exc
         if sdkroot:
-            profile = replace(profile, flags=(*profile.flags, "-isysroot", sdkroot))
-    profile = prepare_profile(profile)
+            flags += ("-isysroot", sdkroot)
+    return prepare_profile(replace(profile, flags=flags))
+
+
+def analyze_program(text: str, profile: VerificationProfile | None = None, *, ctx=None):
+    """Analyze a complete C11 translation unit while separating its raw prefix."""
+    profile = profile or VerificationProfile()
+    ctx = ctx or RunContext(monotonic() + profile.lex_timeout)
+    ctx = _AnalysisContext(ctx, profile.lex_timeout)
+    normalized = _normalize_program(text, ctx)
+    profile = _program_profile(profile, ctx)
     reply = _check_reply(_invoke("program", normalized, profile, ctx))
     _check_object(normalized, profile, ctx)
     preamble, preamble_lines = _program_preamble(normalized)

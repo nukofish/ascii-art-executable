@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from codeart import source as source_module
 from codeart.contracts import PROGRAM_FILL_PATTERN, GenerationRequest, ShapeSpec
 from codeart.pipeline import generate
 
@@ -179,3 +180,26 @@ def test_complete_program_still_rejects_c_syntax_errors():
     assert result.status.value == "FAILED"
     assert result.diagnostics[0].code.value == "INVALID_SOURCE"
     assert result.diagnostics[0].column == 23
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")
+def test_complete_program_uses_compiler_resource_headers(tmp_path, monkeypatch):
+    headers = tmp_path / "include"
+    headers.mkdir()
+    (headers / "codeart_builtin.h").write_text("#define VALUE 42\n")
+    compiler_command = source_module.run_command
+
+    def run_command(args, **kwargs):
+        if args[-1] == "-print-resource-dir":
+            return subprocess.CompletedProcess(args, 0, str(tmp_path) + "\n", "")
+        return compiler_command(args, **kwargs)
+
+    monkeypatch.setattr(source_module, "run_command", run_command)
+    result = generate(GenerationRequest(
+        "#include <codeart_builtin.h>\nint main(void) { return VALUE != 42; }\n",
+        ShapeSpec("circle"), program_mode=True,
+    ))
+
+    assert result.status.value == "OK", result.diagnostics
+    assert result.verification.token_status.value == "PASS"
+    assert result.verification.compile_status.value == "PASS"

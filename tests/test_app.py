@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from concurrent.futures import ThreadPoolExecutor
+from importlib.util import find_spec
 import json
 import shutil
 from threading import Event, Thread
@@ -119,7 +120,10 @@ def test_page_assets_and_report_download(web_server):
     assert json.loads(report)["result"] == job["result"]
 
 
-@pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")
+@pytest.mark.skipif(
+    shutil.which("clang") is None or find_spec("clang") is None,
+    reason="The Clang compiler and libclang package are required",
+)
 def test_web_full_program_downloads_the_verified_complete_source():
     server = create_server(0)
     worker = Thread(target=server.serve_forever, daemon=True)
@@ -138,7 +142,7 @@ def test_web_full_program_downloads_the_verified_complete_source():
         identifier = json.loads(data)["id"]
         job = wait_result(base, identifier)
         assert job["program_mode"] is True
-        assert job["result"]["program_mode"] is True
+        assert job["result"]["program_mode"] is True, job["result"]["diagnostics"]
         prefix = "#include <stdio.h>\n#define VALUE 23\n\n\n"
         assert job["result"]["preamble_text"] == prefix
         assert job["result"]["source_text"].startswith(prefix)
