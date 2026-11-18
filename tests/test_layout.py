@@ -299,6 +299,53 @@ def test_layout_timeout_is_shared_across_retries():
     assert exc_info.value.diagnostic.code == ErrorCode.LAYOUT_TIMEOUT
 
 
+def test_layout_timeout_is_honored_with_a_frozen_clock():
+    # Deterministic callers freeze the injected clock, so the clock-only
+    # deadline never fires.  The real monotonic fallback must still stop the
+    # stage instead of letting the slow join checks run to completion.
+    tokens = tuple(Token(i, "identifier", "v", 1, 1, 1) for i in range(40))
+    model = model_for(tokens)
+
+    def slow_checker(run, nxt, profile):
+        time.sleep(0.02)
+        return False
+
+    ctx = RunContext(deadline=100.0, clock=lambda: 0.0)
+    options = LayoutOptions(base_height_rows=4, layout_timeout_s=0.01,
+                            max_columns=800, max_rows=600)
+    started = time.monotonic()
+    with pytest.raises(StageError) as exc_info:
+        fit_layout(model, ShapeSpec("circle"), options,
+                   mask_builder=build_mask, join_checker=slow_checker, ctx=ctx)
+    elapsed = time.monotonic() - started
+
+    assert exc_info.value.diagnostic.code == ErrorCode.LAYOUT_TIMEOUT
+    assert 0.01 <= elapsed < 0.5
+
+
+def test_layout_timeout_budget_is_shared_across_retries_with_a_frozen_clock():
+    # The real-time fallback is also computed once, outside the retry loop:
+    # three attempts must not each receive a fresh 10 ms budget.
+    tokens = tuple(Token(i, "identifier", "v", 1, 1, 1) for i in range(300))
+    model = model_for(tokens)
+
+    def slow_checker(run, nxt, profile):
+        time.sleep(0.012)
+        return True
+
+    ctx = RunContext(deadline=100.0, clock=lambda: 0.0)
+    options = LayoutOptions(base_height_rows=4, layout_timeout_s=0.01,
+                            max_attempts=3, max_columns=800, max_rows=600)
+    started = time.monotonic()
+    with pytest.raises(StageError) as exc_info:
+        fit_layout(model, ShapeSpec("circle"), options,
+                   mask_builder=build_mask, join_checker=slow_checker, ctx=ctx)
+    elapsed = time.monotonic() - started
+
+    assert exc_info.value.diagnostic.code == ErrorCode.LAYOUT_TIMEOUT
+    assert elapsed < 0.01 * 2.5
+
+
 def test_mask_building_respects_layout_stage_budget():
     clock_state = {"t": 0.0}
 

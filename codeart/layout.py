@@ -32,6 +32,7 @@ bounded by the pipeline's overall deadline.
 from __future__ import annotations
 
 import math
+from time import monotonic
 
 from .contracts import (
     AttemptRecord,
@@ -63,12 +64,15 @@ class _LayoutContext:
     It is passed to the mask builder so the stage budget is enforced *during*
     mask generation, not only after the mask returns.  It preserves the
     wrapped context's shared cancellation signal and overall pipeline
-    deadline, and adds the tighter layout-stage deadline.
+    deadline, and adds the tighter layout-stage deadline in both the injected
+    clock domain and the real monotonic domain.  The real deadline is the
+    fallback for deterministic callers whose clock never advances.
     """
 
-    def __init__(self, ctx, stage_deadline: float) -> None:
+    def __init__(self, ctx, stage_deadline: float, stage_real_deadline: float) -> None:
         self._ctx = ctx
         self._stage_deadline = stage_deadline
+        self._stage_real_deadline = stage_real_deadline
 
     @property
     def deadline(self) -> float:
@@ -84,7 +88,10 @@ class _LayoutContext:
         return self._ctx.clock
 
     def remaining_s(self) -> float:
-        return max(0.0, self.deadline - self.clock())
+        return max(0.0, min(
+            self.deadline - self.clock(),
+            self._stage_real_deadline - monotonic(),
+        ))
 
     def check(self) -> None:
         """Cancellation and the pipeline deadline first, then the stage budget.
@@ -92,10 +99,13 @@ class _LayoutContext:
         Ordering matters: explicit cancellation and the overall pipeline
         deadline are reported via the wrapped context; only then is the
         layout-specific budget checked, so a stage timeout is reported as
-        ``LAYOUT_TIMEOUT``.
+        ``LAYOUT_TIMEOUT``.  The budget is enforced in both the injected clock
+        domain and the real monotonic domain, so a frozen test clock cannot
+        suppress a real stage timeout.
         """
         self._ctx.check()  # CANCELLED or PIPELINE_TIMEOUT
-        if self.clock() >= self._stage_deadline:
+        if (self.clock() >= self._stage_deadline
+                or monotonic() >= self._stage_real_deadline):
             raise StageError(Diagnostic(
                 ErrorCode.LAYOUT_TIMEOUT,
                 "layout",
@@ -319,8 +329,17 @@ def fit_layout(
     history: list[AttemptRecord] = []
     # All retries share one layout-stage deadline, never beyond the pipeline.
     stage_deadline = min(ctx.clock() + options.layout_timeout_s, ctx.deadline)
+    # The same budget is also measured on the real monotonic clock, so a
+    # frozen injected clock cannot disable the stage timeout.  A context
+    # without a stored real deadline (defensive; __post_init__ fills it)
+    # falls back to the stage budget alone.
+    pipeline_real_deadline = ctx.real_deadline
+    if pipeline_real_deadline is None:  # pragma: no cover - __post_init__ fills it
+        pipeline_real_deadline = monotonic() + options.layout_timeout_s
+    stage_real_deadline = min(
+        pipeline_real_deadline, monotonic() + options.layout_timeout_s)
     # A stage-aware context enforces the budget while the mask is built.
-    layout_ctx = _LayoutContext(ctx, stage_deadline)
+    layout_ctx = _LayoutContext(ctx, stage_deadline, stage_real_deadline)
 
     # Build a scale-1 base mask and estimate the first height from the longest
     # token and total area, so the longest token avoids pointless small-scale

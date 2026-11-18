@@ -107,15 +107,29 @@ after height rounding, so a base of 32 rounded to 33 rows reports
 
 ## Cancellation and time budgets
 
-A single layout-stage deadline is derived once as
-`min(clock + layout_timeout_s, ctx.deadline)` and is shared by all retries. A
-`_LayoutContext` wraps the run context with that deadline and is passed to both
-the mask builder and the packer, so the budget is enforced *during* mask
-generation and on every token, not just between attempts.
+A single layout-stage budget is derived once, before the retry loop, so every
+attempt shares it and a new attempt never resets the clock. The budget is
+tracked in two domains at once:
+
+```
+stage_deadline      = min(clock() + layout_timeout_s, ctx.deadline)
+stage_real_deadline = min(ctx.real_deadline, monotonic() + layout_timeout_s)
+```
+
+`stage_deadline` is measured by the injected clock, while
+`stage_real_deadline` is measured by the real monotonic clock and is also
+bounded by the pipeline's real deadline (`RunContext.real_deadline`). A
+`_LayoutContext` wraps the run context with both deadlines and is passed to
+both the mask builder and the packer, so the budget is enforced *during* mask
+generation and on every token, not just between attempts. The tighter of the
+two deadlines applies: keeping the real-time fallback means deterministic
+callers may freeze or rescale the injected clock for reproducible tests, but
+they still cannot suppress a `LAYOUT_TIMEOUT` when real time runs out.
 
 - Explicit cancellation and the overall pipeline deadline are reported as
-  `CANCELLED` / `PIPELINE_TIMEOUT` through the wrapped context.
-- Running past the layout-stage deadline is reported as `LAYOUT_TIMEOUT`.
+  `CANCELLED` / `PIPELINE_TIMEOUT` through the wrapped context, before the
+  stage budget is considered.
+- Running past either layout-stage deadline is reported as `LAYOUT_TIMEOUT`.
 - Each attempt's `elapsed_s` covers both mask generation and token packing.
 
 ## Attempt history
@@ -128,7 +142,7 @@ returned in `plan.attempt_history`; on failure they are attached to
 
 ## Tests
 
-`tests/test_layout.py` (26 tests) covers:
+`tests/test_layout.py` (28 tests) covers:
 
 - one placement per token on circle, cat and code; placements stay in bounds,
   on allowed cells, non-overlapping and strictly ordered;
@@ -137,8 +151,9 @@ returned in `plan.attempt_history`; on failure they are attached to
 - exhausted attempts and the canvas size limit, both raising `LAYOUT_LIMIT`;
 - end-to-end render plus geometry check for base and grown plans;
 - cancellation in the join checker, the stage timeout, the shared deadline
-  across retries, the stage budget enforced during mask generation, and the
-  elapsed time including packing;
+  across retries, the stage budget enforced during mask generation, the
+  elapsed time including packing, and the frozen-clock stage timeout with a
+  shared real-time budget across retries;
 - contiguous-run reset after a separator;
 - the realized scale after rounded height;
 - the fragmented 178x32 CODE mask flowing tokens across many short spans;
