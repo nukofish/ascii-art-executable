@@ -22,6 +22,7 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 from tempfile import TemporaryDirectory, mkdtemp
+from time import monotonic
 
 from .contracts import CompilerInfo
 
@@ -78,6 +79,7 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
     """
     check_context(ctx)
     deadline = ctx.clock() + timeout
+    real_deadline = monotonic() + timeout
     try:
         proc = subprocess.Popen(
             args, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
@@ -90,7 +92,8 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
         try:
             while True:
                 check_context(ctx)
-                remaining = min(deadline, ctx.deadline) - ctx.clock()
+                remaining = min(ctx.remaining_s(), deadline - ctx.clock(),
+                                real_deadline - monotonic())
                 if remaining <= 0:
                     break
                 try:
@@ -98,7 +101,7 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
                 except subprocess.TimeoutExpired:
                     continue
                 check_context(ctx)
-                if ctx.clock() >= deadline:
+                if ctx.clock() >= deadline or monotonic() >= real_deadline:
                     raise CommandTimedOut(stdout.decode("utf-8", errors="replace"))
                 return subprocess.CompletedProcess(
                     args, proc.returncode,

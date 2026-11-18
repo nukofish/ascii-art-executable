@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from codeart.procutil import BuildFailed, BuildSession, CommandTimedOut, run_command, WorkStopped
+from codeart import contracts, source
 from codeart.contracts import Diagnostic, RunContext, StageError
 from codeart.shapes import FontMetrics, ShapeSpec, SizeRequest, build_mask, geometry_metrics
 from codeart.verification_fixtures import BUILTIN_FIXTURES, select_builtin
@@ -318,7 +319,8 @@ def test_missing_dependencies_and_no_fixture(tmp_path):
 
 @requires_clang
 @pytest.mark.parametrize("overall", (3.0, 30.0))
-def test_lexer_callback_receives_shared_budget_api(overall):
+def test_lexer_callback_receives_shared_budget_api(monkeypatch, overall):
+    monkeypatch.setattr(contracts, "monotonic", lambda: 0.0)
     event = Event()
     generation = RunContext(overall, event, clock=lambda: 0.0)
     case = make_case("int f(void) { return 0; }\n", "f")
@@ -346,6 +348,50 @@ def test_lexer_timeout_keeps_geometry_result():
     report = run(case, selected_profile=profile(lex_source=timed_out))
     assert statuses(report) == ("NOT_RUN", "PASS", "NOT_RUN", "NOT_RUN")
     assert report.skip_reasons["token"] == "ANALYSIS_TIMEOUT"
+
+
+@requires_clang
+@pytest.mark.parametrize(("total", "lex_timeout", "reason", "geometry_status"), [
+    (2.0, 0.1, "ANALYSIS_TIMEOUT", "PASS"),
+    (0.1, 2.0, "PIPELINE_TIMEOUT", "NOT_RUN"),
+])
+def test_frozen_clock_lexer_distinguishes_stage_and_total_timeout(
+    monkeypatch, total, lex_timeout, reason, geometry_status,
+):
+    case = make_case("int f(void) { return 0; }\n", "f")
+    selected = source.prepare_profile(VerificationProfile(lex_timeout=lex_timeout))
+
+    def slow_lexer(args, **kwargs):
+        script = ("import runpy, sys, time; time.sleep(0.4); "
+                  "sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')")
+        return run_command([sys.executable, "-c", script, *args[1:]], **kwargs)
+
+    monkeypatch.setattr(source, "run_command", slow_lexer)
+    report = run(case, selected_profile=selected,
+                 ctx=RunContext(100.0 + total, clock=lambda: 100.0))
+
+    assert statuses(report) == ("NOT_RUN", geometry_status, "NOT_RUN", "NOT_RUN")
+    assert report.skip_reasons["token"] == reason
+
+
+@requires_clang
+def test_frozen_clock_shares_total_budget_between_compiler_commands(tmp_path):
+    case = make_case("int f(void) { return 0; }\n", "f")
+    compiler = tmp_path / "slow-clang"
+    compiler.write_text(
+        f"#!{sys.executable}\n"
+        "import os, sys, time\n"
+        "time.sleep(0.3)\n"
+        f"os.execv({CLANG!r}, [{CLANG!r}, *sys.argv[1:]])\n",
+        encoding="utf-8",
+    )
+    compiler.chmod(0o755)
+    report = run(case, selected_profile=profile(compiler=str(compiler), compile_timeout=2.0),
+                 ctx=RunContext(100.5, clock=lambda: 100.0))
+
+    assert report.compiler is not None
+    assert statuses(report) == ("PASS", "PASS", "NOT_RUN", "NOT_RUN")
+    assert report.skip_reasons["compile"] == "PIPELINE_TIMEOUT"
 
 
 @requires_clang
@@ -602,7 +648,8 @@ def test_regression_reports_unverified_cases_and_cancellation():
     assert not report.matrix_passed
 
 
-def test_regression_uses_injected_clock_for_run_and_case_deadlines():
+def test_regression_uses_injected_clock_for_run_and_case_deadlines(monkeypatch):
+    monkeypatch.setattr(contracts, "monotonic", lambda: 0.0)
     now = 0.0
     parent = RunContext(200.0, clock=lambda: now)
 

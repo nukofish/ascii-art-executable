@@ -185,11 +185,7 @@ def run_regression(
     if ctx is None:
         total = VerificationContext(start + 180)
     else:
-        total = VerificationContext(
-            min(ctx.deadline, ctx.clock() + 180),
-            ctx.cancel_event,
-            clock=ctx.clock,
-        )
+        total = VerificationContext.within(ctx, 180)
     cases = []
     interrupted = None
     cat_scales = {
@@ -203,11 +199,7 @@ def run_regression(
                 selection = FixtureSelection(fixture, builds)
                 for kind in ("circle", "cat", "code"):
                     check_context(total)
-                    case_ctx = VerificationContext(
-                        min(total.deadline, total.clock() + 30),
-                        total.cancel_event,
-                        clock=total.clock,
-                    )
+                    case_ctx = VerificationContext.within(total, 30)
                     shape = ShapeSpec(kind, text="CODE" if kind == "code" else None)
                     report = generate_case(selection, shape, ctx=case_ctx)
                     issues = _case_issues(report, kind, min_coverage, min_ear_coverage)
