@@ -26,7 +26,9 @@ Cancellation and time budgets are enforced during both mask generation and
 packing, not just between attempts.  A stage-aware context is passed to the
 mask builder, so work stops promptly when the budget is reached.  All retries
 share one layout-stage deadline derived from ``options.layout_timeout_s`` and
-bounded by the pipeline's overall deadline.
+bounded by the pipeline's overall deadline.  The run context is read
+defensively: a duck-typed context without a ``real_deadline`` attribute still
+lays out, falling back to the stage budget on the real clock.
 """
 
 from __future__ import annotations
@@ -330,11 +332,13 @@ def fit_layout(
     # All retries share one layout-stage deadline, never beyond the pipeline.
     stage_deadline = min(ctx.clock() + options.layout_timeout_s, ctx.deadline)
     # The same budget is also measured on the real monotonic clock, so a
-    # frozen injected clock cannot disable the stage timeout.  A context
-    # without a stored real deadline (defensive; __post_init__ fills it)
-    # falls back to the stage budget alone.
-    pipeline_real_deadline = ctx.real_deadline
-    if pipeline_real_deadline is None:  # pragma: no cover - __post_init__ fills it
+    # frozen injected clock cannot disable the stage timeout.  A context that
+    # predates ``real_deadline`` (an older test or a third-party duck-typed
+    # context exposing only deadline/clock/check()/cancel_event) is accepted:
+    # the attribute is read defensively and a missing one falls back to the
+    # stage budget measured on the real clock, exactly like ``None``.
+    pipeline_real_deadline = getattr(ctx, "real_deadline", None)
+    if pipeline_real_deadline is None:
         pipeline_real_deadline = monotonic() + options.layout_timeout_s
     stage_real_deadline = min(
         pipeline_real_deadline, monotonic() + options.layout_timeout_s)

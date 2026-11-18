@@ -323,9 +323,10 @@ def test_layout_timeout_is_honored_with_a_frozen_clock():
     assert 0.01 <= elapsed < 0.5
 
 
-def test_layout_timeout_budget_is_shared_across_retries_with_a_frozen_clock():
-    # The real-time fallback is also computed once, outside the retry loop:
-    # three attempts must not each receive a fresh 10 ms budget.
+def test_frozen_clock_real_budget_stops_the_stage_within_the_first_attempt():
+    # Complements the deterministic shared-budget regression below: when the
+    # injected clock is frozen, the real monotonic fallback must still stop the
+    # stage during the first attempt instead of letting all three attempts run.
     tokens = tuple(Token(i, "identifier", "v", 1, 1, 1) for i in range(300))
     model = model_for(tokens)
 
@@ -344,6 +345,118 @@ def test_layout_timeout_budget_is_shared_across_retries_with_a_frozen_clock():
 
     assert exc_info.value.diagnostic.code == ErrorCode.LAYOUT_TIMEOUT
     assert elapsed < 0.01 * 2.5
+
+
+def test_layout_budget_is_not_reset_for_the_second_attempt():
+    # Deterministic, discriminating regression for the budget shared by all
+    # retries. The injected clock advances only when a retry attempt builds its
+    # mask: +6 ms on the first attempt and +5 ms on the second (11 ms in
+    # total). The first attempt therefore stays inside the 10 ms budget and
+    # fails for capacity, while the second one is already past it.
+    #
+    # This is what the old ``time.sleep(0.012)`` version could not prove: there
+    # the very first attempt burned the whole budget, so an implementation that
+    # reset the budget per attempt still reported LAYOUT_TIMEOUT and the test
+    # passed. Here such an implementation would give the second attempt a fresh
+    # 10 ms deadline at t=6 ms, so its 5 ms advance would stay inside it, the
+    # wide token would still fail for capacity, all three attempts would be
+    # exhausted, and the final error would be LAYOUT_LIMIT - which fails the
+    # LAYOUT_TIMEOUT assertion below.
+    wide = Token(0, "identifier", "w" * 100, 100, 1, 1)
+    model = model_for((wide,))
+    clock = {"t": 0.0}
+    ctx = RunContext(deadline=100.0, clock=lambda: clock["t"])
+
+    # The estimator builds one scale-1 probe mask before the retry loop (no
+    # growth is possible: max_rows == base_height_rows), so call 0 is that
+    # probe and calls 1..2 are the first two attempts.
+    schedule = (0.0, 0.006, 0.005)
+    calls = {"n": 0}
+
+    def ticking_builder(shape_spec, size_request, font_metrics, *, ctx):
+        call = calls["n"]
+        calls["n"] += 1
+        if call < len(schedule):
+            clock["t"] += schedule[call]
+        return _rect_mask(5)  # 5 cells wide: the 100-cell token never fits
+
+    options = LayoutOptions(base_height_rows=4, layout_timeout_s=0.01,
+                            max_attempts=3, max_columns=800, max_rows=4)
+    with pytest.raises(StageError) as exc_info:
+        fit_layout(model, ShapeSpec("circle"), options,
+                   mask_builder=ticking_builder, join_checker=always_join, ctx=ctx)
+
+    diagnostic = exc_info.value.diagnostic
+    assert diagnostic.code == ErrorCode.LAYOUT_TIMEOUT
+    history = diagnostic.details["attempt_history"]
+    # The first attempt really ran, recorded a capacity failure (not a
+    # timeout) and is followed by the attempt that hit the shared deadline.
+    assert len(history) >= 1
+    assert history[0].failure_token_index == 0
+    assert history[0].elapsed_s == pytest.approx(0.006)
+    assert history[-1].reason.startswith(ErrorCode.LAYOUT_TIMEOUT.value)
+    assert 0.01 <= clock["t"] < 0.02
+    assert clock["t"] == pytest.approx(0.011)
+
+
+# ------------------------------------------------------- legacy run contexts
+
+
+class LegacyContext:
+    """The duck type an older test or third-party caller passes to the stages.
+
+    It provides everything ``fit_layout`` reads - ``deadline``, ``clock``,
+    ``check()``, ``cancel_event`` and ``remaining_s()`` - but it predates
+    ``real_deadline``, which a real :class:`RunContext` derives at construction.
+    """
+
+    def __init__(self, deadline, clock=monotonic):
+        self.deadline = deadline
+        self.clock = clock
+        self.cancel_event = None
+
+    def remaining_s(self):
+        return max(0.0, self.deadline - self.clock())
+
+    def check(self):
+        if self.remaining_s() == 0:
+            raise StageError(Diagnostic(
+                ErrorCode.PIPELINE_TIMEOUT, "pipeline", "Generation timed out"))
+
+
+#: Error codes ``fit_layout`` may legitimately end a run with. Anything else,
+#: in particular an ``AttributeError`` escaping instead of a ``StageError``, is
+#: a regression.
+LAYOUT_ERROR_CODES = frozenset({
+    ErrorCode.LAYOUT_LIMIT,
+    ErrorCode.LAYOUT_TIMEOUT,
+    ErrorCode.INVALID_SHAPE,
+    ErrorCode.CANCELLED,
+    ErrorCode.PIPELINE_TIMEOUT,
+})
+
+
+def test_layout_accepts_legacy_context_without_real_deadline():
+    # Regression: fit_layout used to read ``ctx.real_deadline`` directly, so a
+    # duck-typed context without that attribute (older fixtures, third-party
+    # callers) raised AttributeError before the first attempt. The attribute is
+    # now read with getattr, so the layout completes - or fails with one of its
+    # own diagnosed codes - instead of blowing up with AttributeError.
+    model = model_for(make_tokens(TOKEN_ITEMS))
+    legacy = LegacyContext(monotonic() + 30)
+    assert not hasattr(legacy, "real_deadline")
+
+    try:
+        plan = fit_layout(model, ShapeSpec("circle"), LayoutOptions(),
+                          mask_builder=build_mask, join_checker=never_join, ctx=legacy)
+    except StageError as exc:
+        # A legacy context may still end in a diagnosed stage error, never in
+        # an AttributeError surfacing as the failure's diagnostic.
+        assert not isinstance(getattr(exc, "diagnostic", None), AttributeError)
+        assert exc.diagnostic.code in LAYOUT_ERROR_CODES
+    else:
+        assert len(plan.placements) == len(model.tokens)
+        assert plan.attempt_count >= 1
 
 
 def test_mask_building_respects_layout_stage_budget():

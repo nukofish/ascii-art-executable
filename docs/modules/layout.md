@@ -126,6 +126,14 @@ two deadlines applies: keeping the real-time fallback means deterministic
 callers may freeze or rescale the injected clock for reproducible tests, but
 they still cannot suppress a `LAYOUT_TIMEOUT` when real time runs out.
 
+`fit_layout` reads the context's real monotonic deadline defensively: a
+duck-typed context that predates `real_deadline` (an older fixture or a
+third-party caller exposing only `deadline`, `clock`, `check()` and
+`cancel_event`) is still accepted, and the missing attribute degrades to
+`monotonic() + layout_timeout_s`, exactly as an explicit `None` does. Such a
+context therefore lays out normally or fails with one of the stage's own
+codes - never with an `AttributeError` before the first attempt.
+
 - Explicit cancellation and the overall pipeline deadline are reported as
   `CANCELLED` / `PIPELINE_TIMEOUT` through the wrapped context, before the
   stage budget is considered.
@@ -142,7 +150,7 @@ returned in `plan.attempt_history`; on failure they are attached to
 
 ## Tests
 
-`tests/test_layout.py` (28 tests) covers:
+`tests/test_layout.py` (30 tests) covers:
 
 - one placement per token on circle, cat and code; placements stay in bounds,
   on allowed cells, non-overlapping and strictly ordered;
@@ -152,8 +160,11 @@ returned in `plan.attempt_history`; on failure they are attached to
 - end-to-end render plus geometry check for base and grown plans;
 - cancellation in the join checker, the stage timeout, the shared deadline
   across retries, the stage budget enforced during mask generation, the
-  elapsed time including packing, and the frozen-clock stage timeout with a
-  shared real-time budget across retries;
+  elapsed time including packing, the frozen-clock stage timeout with a
+  shared real-time budget, a deterministic shared retry budget (a 6 ms first
+  attempt, an 11 ms second one) that discriminates a per-attempt reset, and a
+  legacy context without `real_deadline` being accepted instead of raising
+  `AttributeError`;
 - contiguous-run reset after a separator;
 - the realized scale after rounded height;
 - the fragmented 178x32 CODE mask flowing tokens across many short spans;
