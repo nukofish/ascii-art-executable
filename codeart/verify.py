@@ -93,8 +93,7 @@ def _check_tokens(model, rendered, profile, ctx, report):
     if profile.lex_source is None:
         _skip(report, "token", ErrorCode.DEPENDENCY_UNAVAILABLE, "No C lexer was configured")
         return None
-    lex_ctx = VerificationContext(min(ctx.deadline, monotonic() + profile.lex_timeout),
-                                  ctx.cancel_event)
+    lex_ctx = VerificationContext.within(ctx, profile.lex_timeout)
     try:
         tokens = []
         for token in profile.lex_source(rendered.source_text, ctx=lex_ctx):

@@ -28,6 +28,11 @@ def test_shared_contracts_and_missing_final_newline():
     assert model.profile.lex_source is not None
 
 
+def test_source_analysis_uses_injected_clock_for_child_processes():
+    model = source.analyze_source(SIMPLE, ctx=RunContext(10.0, clock=lambda: 0.0))
+    assert model.function_name == "f"
+
+
 @pytest.mark.parametrize("text", [
     "int f(int x) { return g(x); }",
     "int f(void) { return ext; }",
@@ -99,15 +104,21 @@ def test_invalid_input_keeps_diagnostic_through_pipeline():
     assert result.diagnostics[0].code == ErrorCode.UNSUPPORTED_SOURCE
 
 
-@pytest.mark.parametrize("cancel", [False, True])
-def test_analysis_stops_and_reaps_worker(monkeypatch, tmp_path, cancel):
+@pytest.mark.parametrize(("clock", "budget", "cancel", "expected"), [
+    (monotonic, 30, False, ErrorCode.ANALYSIS_TIMEOUT),
+    (monotonic, 30, True, ErrorCode.CANCELLED),
+    (lambda: 100.0, 30, False, ErrorCode.ANALYSIS_TIMEOUT),
+    (lambda: 100.0, 0.35, False, ErrorCode.PIPELINE_TIMEOUT),
+    (lambda: 100.0, 30, True, ErrorCode.CANCELLED),
+])
+def test_analysis_stops_and_reaps_worker(monkeypatch, tmp_path, clock, budget, cancel, expected):
     actual_run = source.run_command
     pid_file = tmp_path / "worker.pid"
 
     def slow_worker(args, **kwargs):
         script = (
             "import os,time; from pathlib import Path; "
-            f"Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(10)"
+            f"Path({str(pid_file)!r}).write_text(str(os.getpid())); time.sleep(1)"
         )
         return actual_run([sys.executable, "-c", script], **kwargs)
 
@@ -119,10 +130,9 @@ def test_analysis_stops_and_reaps_worker(monkeypatch, tmp_path, cancel):
     try:
         with pytest.raises(StageError) as exc:
             source.analyze_source(SIMPLE, VerificationProfile(lex_timeout=0.5),
-                                  ctx=RunContext(monotonic() + 30, event))
+                                  ctx=RunContext(clock() + budget, event, clock=clock))
     finally:
         timer.cancel()
-    expected = ErrorCode.CANCELLED if cancel else ErrorCode.ANALYSIS_TIMEOUT
     assert exc.value.diagnostic.code == expected
     assert pid_file.exists()
     with pytest.raises(ProcessLookupError):

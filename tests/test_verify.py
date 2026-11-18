@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import Event, Thread
 from time import monotonic, sleep
+from unittest.mock import MagicMock, Mock, call
 
 import pytest
 
@@ -20,6 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from codeart.procutil import BuildFailed, BuildSession, CommandTimedOut, run_command, WorkStopped
+from codeart import contracts, procutil, source
 from codeart.contracts import Diagnostic, RunContext, StageError
 from codeart.shapes import FontMetrics, ShapeSpec, SizeRequest, build_mask, geometry_metrics
 from codeart.verification_fixtures import BUILTIN_FIXTURES, select_builtin
@@ -40,7 +42,7 @@ def clang_lex_for_test(source, *, ctx):
     result = subprocess.run(
         [CLANG, "-std=c11", "-x", "c", "-fsyntax-only", "-Xclang", "-dump-raw-tokens", "-"],
         input=source, text=True, capture_output=True, check=True,
-        timeout=max(0, ctx.deadline - monotonic()),
+        timeout=ctx.remaining_s(),
     )
     tokens = []
     offset = 0
@@ -317,23 +319,24 @@ def test_missing_dependencies_and_no_fixture(tmp_path):
 
 
 @requires_clang
-def test_lexer_callback_receives_shared_budget_api():
+@pytest.mark.parametrize("overall", (3.0, 30.0))
+def test_lexer_callback_receives_shared_budget_api(monkeypatch, overall):
+    monkeypatch.setattr(contracts, "monotonic", lambda: 0.0)
     event = Event()
-    generation = RunContext(monotonic() + 30, event)
+    generation = RunContext(overall, event, clock=lambda: 0.0)
     case = make_case("int f(void) { return 0; }\n", "f")
     budgets = []
 
     def lex(source, *, ctx):
         assert ctx.cancel_event is event
-        assert ctx.deadline < generation.deadline
+        assert ctx.clock is generation.clock
         budgets.append(ctx.remaining_s())
         return clang_lex_for_test(source, ctx=ctx)
 
     report = run(case, selected_profile=profile(lex_source=lex, lex_timeout=5.0),
                  ctx=generation)
     assert statuses(report) == ("PASS", "PASS", "PASS", "NOT_RUN"), report.diagnostics
-    assert len(budgets) == 1
-    assert 0 < budgets[0] <= 5.0
+    assert budgets == [min(overall, 5.0)]
 
 
 @requires_clang
@@ -346,6 +349,81 @@ def test_lexer_timeout_keeps_geometry_result():
     report = run(case, selected_profile=profile(lex_source=timed_out))
     assert statuses(report) == ("NOT_RUN", "PASS", "NOT_RUN", "NOT_RUN")
     assert report.skip_reasons["token"] == "ANALYSIS_TIMEOUT"
+
+
+@requires_clang
+@pytest.mark.parametrize(("total", "lex_timeout", "reason", "geometry_status"), [
+    (2.0, 0.1, "ANALYSIS_TIMEOUT", "PASS"),
+    (0.1, 2.0, "PIPELINE_TIMEOUT", "NOT_RUN"),
+])
+def test_frozen_clock_lexer_distinguishes_stage_and_total_timeout(
+    monkeypatch, total, lex_timeout, reason, geometry_status,
+):
+    case = make_case("int f(void) { return 0; }\n", "f")
+    selected = source.prepare_profile(VerificationProfile(lex_timeout=lex_timeout))
+
+    def slow_lexer(args, **kwargs):
+        script = ("import runpy, sys, time; time.sleep(0.4); "
+                  "sys.argv = sys.argv[1:]; runpy.run_path(sys.argv[0], run_name='__main__')")
+        return run_command([sys.executable, "-c", script, *args[1:]], **kwargs)
+
+    monkeypatch.setattr(source, "run_command", slow_lexer)
+    report = run(case, selected_profile=selected,
+                 ctx=RunContext(100.0 + total, clock=lambda: 100.0))
+
+    assert statuses(report) == ("NOT_RUN", geometry_status, "NOT_RUN", "NOT_RUN")
+    assert report.skip_reasons["token"] == reason
+
+
+@requires_clang
+def test_frozen_clock_shares_total_budget_between_compiler_commands(monkeypatch):
+    case = make_case("int f(void) { return 0; }\n", "f")
+    lexed = clang_lex_for_test(case[2].source_text, ctx=context())
+    # Binary fractions make the remaining-budget assertion exact.
+    total = 0.0625
+    version_elapsed = 0.03125
+    remaining = total - version_elapsed
+    now = 8.0
+    monkeypatch.setattr(contracts, "monotonic", lambda: now)
+    monkeypatch.setattr(procutil, "monotonic", lambda: now)
+
+    version_child = MagicMock()
+    version_child.__enter__.return_value = version_child
+    version_child.returncode = 0
+    compile_child = MagicMock()
+    compile_child.__enter__.return_value = compile_child
+    start_compiler = Mock(side_effect=[version_child, compile_child])
+    monkeypatch.setattr(procutil.subprocess, "Popen", start_compiler)
+    monkeypatch.setattr(procutil, "stop_process", Mock())
+
+    def finish_version(*, timeout):
+        nonlocal now
+        assert timeout >= version_elapsed
+        now += version_elapsed
+        return b"test compiler 1", b""
+
+    def compile_object(*, timeout=None):
+        nonlocal now
+        if timeout is None:
+            return b"", b""
+        assert timeout == remaining
+        now += timeout
+        raise subprocess.TimeoutExpired("test compiler", timeout)
+
+    version_child.communicate.side_effect = finish_version
+    compile_child.communicate.side_effect = compile_object
+    selected = profile(lex_source=lambda text, *, ctx: lexed,
+                       compiler=CLANG, compile_timeout=1.0)
+    ctx = RunContext(100.0 + total, clock=lambda: 100.0)
+    report = run(case, selected_profile=selected, ctx=ctx)
+
+    version_call, compile_call = start_compiler.call_args_list
+    assert version_call.args[0][-1] == "--version"
+    assert "-c" in compile_call.args[0]
+    assert compile_child.communicate.call_args_list == [call(timeout=remaining), call()]
+    assert report.compiler is not None
+    assert statuses(report) == ("PASS", "PASS", "NOT_RUN", "NOT_RUN")
+    assert report.skip_reasons["compile"] == "PIPELINE_TIMEOUT"
 
 
 @requires_clang
@@ -600,3 +678,21 @@ def test_regression_reports_unverified_cases_and_cancellation():
     assert report.cases[0].issues == ("VERIFICATION_MISSING",)
     assert report.interrupted == "CANCELLED"
     assert not report.matrix_passed
+
+
+def test_regression_uses_injected_clock_for_run_and_case_deadlines(monkeypatch):
+    monkeypatch.setattr(contracts, "monotonic", lambda: 0.0)
+    now = 0.0
+    parent = RunContext(200.0, clock=lambda: now)
+
+    def generate(selection, shape, *, ctx):
+        nonlocal now
+        assert ctx.clock is parent.clock
+        assert ctx.remaining_s() == 30.0
+        now = 180.0
+        return None
+
+    report = run_regression(generate, ctx=parent)
+    assert report.interrupted == "PIPELINE_TIMEOUT"
+    assert len(report.cases) == 1
+    assert report.cases[0].issues == ("VERIFICATION_MISSING", "CASE_DEADLINE")

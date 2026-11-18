@@ -99,14 +99,34 @@ from .shapes import FontMetrics, Mask, ShapeSpec, SizeRequest  # noqa: E402
 
 @dataclass(frozen=True)
 class RunContext:
-    """One absolute monotonic deadline and cancellation signal per generation."""
+    """One shared budget measured by the caller's clock and real monotonic time."""
 
     deadline: float
     cancel_event: Event | None = None
     clock: Callable[[], float] = field(default=monotonic, repr=False, compare=False)
+    _real_deadline: float | None = field(default=None, kw_only=True, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        if self._real_deadline is None:
+            real_deadline = self.deadline
+            if self.clock is not monotonic:
+                real_deadline = monotonic() + (self.deadline - self.clock())
+            object.__setattr__(self, "_real_deadline", real_deadline)
+
+    @classmethod
+    def within(cls, parent: RunContext, timeout: float):
+        """Derive a stage budget limited by both of the parent's deadlines."""
+        return cls(
+            min(parent.deadline, parent.clock() + timeout),
+            parent.cancel_event,
+            clock=parent.clock,
+            _real_deadline=min(parent._real_deadline, monotonic() + timeout),
+        )
 
     def remaining_s(self) -> float:
-        return max(0.0, self.deadline - self.clock())
+        now = self.clock()
+        real_now = now if self.clock is monotonic else monotonic()
+        return max(0.0, min(self.deadline - now, self._real_deadline - real_now))
 
     def check(self) -> None:
         if self.cancel_event is not None and self.cancel_event.is_set():

@@ -39,12 +39,13 @@ class _AnalysisContext:
 
     def __init__(self, parent, timeout):
         self.parent = parent
-        self.clock = parent.clock
-        self.deadline = min(parent.deadline, self.clock() + timeout)
-        self.cancel_event = parent.cancel_event
+        self.budget = RunContext.within(parent, timeout)
+        self.clock = self.budget.clock
+        self.deadline = self.budget.deadline
+        self.cancel_event = self.budget.cancel_event
 
     def remaining_s(self):
-        return max(0.0, self.deadline - self.clock())
+        return self.budget.remaining_s()
 
     def check(self):
         self.parent.check()
