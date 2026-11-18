@@ -23,7 +23,7 @@ from collections import Counter
 from pathlib import Path
 from tempfile import TemporaryDirectory, mkdtemp
 
-from .contracts import CompilerInfo
+from .contracts import CompilerInfo, RunContext, clock_with_real_elapsed
 
 __all__ = (
     "BuildFailed", "BuildSession", "CommandTimedOut", "DependencyUnavailable",
@@ -76,6 +76,10 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
     stage budget raises `CommandTimedOut`. In every non-zero exit case the
     child's process group is killed before the exception leaves this function.
     """
+    clock = clock_with_real_elapsed(ctx.clock)
+    if clock is not ctx.clock:
+        ctx = RunContext(ctx.deadline, ctx.cancel_event, clock=clock)
+
     check_context(ctx)
     deadline = ctx.clock() + timeout
     try:

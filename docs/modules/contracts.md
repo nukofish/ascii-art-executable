@@ -79,8 +79,10 @@ so the CLI, web result and downloaded report use one top-level decision.
 Each stage receives the same `RunContext`. Check `ctx.check()` in long
 loops and before expensive work. Derive stage deadlines from `ctx.clock`
 and use the same clock in child contexts. Limit child processes to the
-smaller of the remaining stage budget and `ctx.remaining_s()`. Terminate and
-reap them when cancelled or timed out. Layout retries share one stage budget.
+smaller of the remaining stage budget and `ctx.remaining_s()`. While a
+subprocess is running, real elapsed time also consumes both budgets, so a
+paused test clock cannot keep a real child alive past its limit. Terminate
+and reap children when cancelled or timed out. Layout retries share one stage budget.
 
 A, B, C and D raise `PipelineError(Diagnostic(...))` for diagnosed failures.
 `PipelineError` is the canonical name for the stage failure; `StageError` is a

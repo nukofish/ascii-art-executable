@@ -115,6 +115,19 @@ class RunContext:
             raise StageError(Diagnostic(ErrorCode.PIPELINE_TIMEOUT, "pipeline", "Generation timed out"))
 
 
+def clock_with_real_elapsed(clock: Callable[[], float]) -> Callable[[], float]:
+    """Advance an injected clock by at least the elapsed real time."""
+    if clock is monotonic:
+        return clock
+    injected_start = clock()
+    real_start = monotonic()
+
+    def elapsed_clock():
+        return max(clock(), injected_start + (monotonic() - real_start))
+
+    return elapsed_clock
+
+
 @dataclass(frozen=True)
 class TokenLocation:
     kind: str

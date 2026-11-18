@@ -104,8 +104,16 @@ def test_invalid_input_keeps_diagnostic_through_pipeline():
     assert result.diagnostics[0].code == ErrorCode.UNSUPPORTED_SOURCE
 
 
-@pytest.mark.parametrize("cancel", [False, True])
-def test_analysis_stops_and_reaps_worker(monkeypatch, tmp_path, cancel):
+@pytest.mark.parametrize(("cancel", "freeze_clock", "budget", "expected"), [
+    (False, False, 30, ErrorCode.ANALYSIS_TIMEOUT),
+    (True, False, 30, ErrorCode.CANCELLED),
+    (False, True, 30, ErrorCode.ANALYSIS_TIMEOUT),
+    (True, True, 30, ErrorCode.CANCELLED),
+    (False, True, 0.35, ErrorCode.PIPELINE_TIMEOUT),
+])
+def test_analysis_stops_and_reaps_worker(
+    monkeypatch, tmp_path, cancel, freeze_clock, budget, expected,
+):
     actual_run = source.run_command
     pid_file = tmp_path / "worker.pid"
 
@@ -118,16 +126,17 @@ def test_analysis_stops_and_reaps_worker(monkeypatch, tmp_path, cancel):
 
     monkeypatch.setattr(source, "run_command", slow_worker)
     event = Event()
+    clock = (lambda: 0.0) if freeze_clock else monotonic
+    ctx = RunContext(clock() + budget, event, clock=clock)
     timer = Timer(0.25, event.set)
     if cancel:
         timer.start()
     try:
         with pytest.raises(StageError) as exc:
             source.analyze_source(SIMPLE, VerificationProfile(lex_timeout=0.5),
-                                  ctx=RunContext(monotonic() + 30, event))
+                                  ctx=ctx)
     finally:
         timer.cancel()
-    expected = ErrorCode.CANCELLED if cancel else ErrorCode.ANALYSIS_TIMEOUT
     assert exc.value.diagnostic.code == expected
     assert pid_file.exists()
     with pytest.raises(ProcessLookupError):

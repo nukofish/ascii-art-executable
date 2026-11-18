@@ -1,12 +1,13 @@
 """Preserve the old process-module imports during the public-module migration."""
 
 import subprocess
+import sys
 from threading import Event
 from unittest.mock import MagicMock, Mock, call
 
 import pytest
 
-from codeart import procutil
+from codeart import contracts, procutil
 from codeart.contracts import RunContext
 from codeart import _verification_process as legacy
 from codeart.verify import VerificationContext
@@ -37,6 +38,7 @@ def test_command_stops_and_reaps_child_using_injected_clock(
     stop = Mock()
     monkeypatch.setattr(procutil.subprocess, "Popen", Mock(return_value=child))
     monkeypatch.setattr(procutil, "stop_process", stop)
+    monkeypatch.setattr(contracts, "monotonic", lambda: 0.0)
 
     def communicate(*, timeout=None):
         nonlocal now
@@ -58,3 +60,33 @@ def test_command_stops_and_reaps_child_using_injected_clock(
         assert error.value.reason == stop_reason
     else:
         assert error.value.stdout == "partial stdout"
+
+
+@pytest.mark.parametrize(("overall", "timeout", "expected_error"), [
+    (1.0, 0.1, procutil.CommandTimedOut),
+    (0.1, 1.0, procutil.WorkStopped),
+])
+def test_frozen_clock_still_times_out_and_reaps_real_child(
+    monkeypatch, tmp_path, overall, timeout, expected_error,
+):
+    popen = subprocess.Popen
+    children = []
+
+    def start_child(*args, **kwargs):
+        child = popen(*args, **kwargs)
+        children.append(child)
+        return child
+
+    monkeypatch.setattr(procutil.subprocess, "Popen", start_child)
+    ctx = RunContext(overall, clock=lambda: 0.0)
+    with pytest.raises(expected_error) as error:
+        procutil.run_command(
+            [sys.executable, "-c", "import time; time.sleep(0.5)"],
+            cwd=tmp_path, env=None, ctx=ctx, timeout=timeout,
+        )
+
+    if expected_error is procutil.WorkStopped:
+        assert error.value.reason == "PIPELINE_TIMEOUT"
+    assert len(children) == 1
+    assert children[0].returncode is not None
+    assert children[0].returncode != 0

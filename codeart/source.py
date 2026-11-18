@@ -13,7 +13,7 @@ from time import monotonic
 
 from .contracts import (
     Diagnostic, ErrorCode, LexedToken, RunContext, SourceModel, StageError, Token,
-    VerificationProfile,
+    VerificationProfile, clock_with_real_elapsed,
 )
 from ._source_lexer import LexWorker
 from .procutil import (
@@ -39,7 +39,7 @@ class _AnalysisContext:
 
     def __init__(self, parent, timeout):
         self.parent = parent
-        self.clock = parent.clock
+        self.clock = clock_with_real_elapsed(parent.clock)
         self.deadline = min(parent.deadline, self.clock() + timeout)
         self.cancel_event = parent.cancel_event
 
@@ -48,7 +48,12 @@ class _AnalysisContext:
 
     def check(self):
         self.parent.check()
-        if self.remaining_s() <= 0:
+        now = self.clock()
+        if now >= self.parent.deadline:
+            raise StageError(Diagnostic(
+                ErrorCode.PIPELINE_TIMEOUT, "pipeline", "Generation timed out"
+            ))
+        if now >= self.deadline:
             raise StageError(Diagnostic(
                 ErrorCode.ANALYSIS_TIMEOUT, "analysis", "Clang analysis timed out"
             ))
