@@ -25,7 +25,7 @@ __all__ = ("analyze_source", "can_join", "lex_source", "prepare_profile")
 # Coordinates reported for the original text; the worker reports the same
 # one-based convention after normalization.
 _TRIGRAPH = re.compile(r"\?\?[=/'()!<>-]")
-_LINE_SPLICE = re.compile(r"\\(?:\r\n|\r|\n)")
+_LINE_SPLICE = re.compile(r"\\\n")
 _COMPILER_ERROR = re.compile(r"input\.c:(\d+):(\d+): (?:fatal )?error:")
 
 
@@ -67,6 +67,7 @@ def _normalize(text, ctx):
             # Printable ASCII plus the accepted newline forms and out-of-token tabs.
             if char not in "\r\n\t" and not " " <= char <= "~":
                 raise _unsupported("Only printable ASCII source is supported", line, column)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     for pattern, message in (
         (_LINE_SPLICE, "Line splicing is unsupported"),
         (_TRIGRAPH, "Trigraphs are unsupported"),
@@ -75,7 +76,7 @@ def _normalize(text, ctx):
         if match:
             line, column = _position(text, match.start())
             raise _unsupported(message, line, column)
-    return text.replace("\r\n", "\n").replace("\r", "\n")
+    return text
 
 
 def _invoke(mode, text, profile, ctx):
@@ -131,7 +132,7 @@ def _first_compiler_error(stderr):
 
 
 def _check_object(text, profile, ctx):
-    """Compile the original source as an object; no main and no linking."""
+    """Compile the original source as an object without linking."""
     try:
         with BuildSession() as builds:
             compiler = builds.compiler_info(profile, ctx)

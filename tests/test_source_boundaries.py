@@ -71,8 +71,8 @@ def test_extension_names_used_as_identifiers_stay_legal():
     assert model.function_name == "f"
 
 
-@pytest.mark.parametrize("name", ["__func__", "__FUNCTION__", "__PRETTY_FUNCTION__"])
-def test_function_name_builtins_are_rejected(name):
+@pytest.mark.parametrize("name", ["__FUNCTION__", "__PRETTY_FUNCTION__", "__FUNCSIG__"])
+def test_function_name_extensions_are_rejected(name):
     diagnostic = failure(f"int f(void) {{ return {name}[0]; }}")
     assert diagnostic.code == ErrorCode.UNSUPPORTED_SOURCE
     assert (diagnostic.line, diagnostic.column) == (1, 22)
@@ -103,6 +103,8 @@ def test_tabs_are_allowed_outside_tokens_only():
     ("int f(void) { return 1 ??( 2; }", (1, 24)),
     ("int f(void) { ret\\\nurn 0; }", (1, 18)),
     ("int f(void) {\r\n ret\\\r\nurn 0; }", (2, 5)),
+    ("int f(void) {\r ret\\\nurn 0; }", (2, 5)),
+    ("int f(void) {\r\n\r  ??= invalid; }", (3, 3)),
 ])
 def test_line_splicing_and_trigraphs_report_positions(text, position):
     diagnostic = failure(text)
