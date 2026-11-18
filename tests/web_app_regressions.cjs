@@ -27,7 +27,7 @@ function response(data) {
   return {ok: true, status: 200, json: async () => data};
 }
 
-function openPage(previous, handler) {
+function openPage(previous, handler, storage = new Map()) {
   const nodes = new Map();
   const get = id => {
     if (!nodes.has(id)) nodes.set(id, element());
@@ -35,7 +35,7 @@ function openPage(previous, handler) {
   };
   get("shape").value = "circle";
   get("scale").value = "1";
-  const storage = new Map(previous ? [["codeart-job", previous]] : []);
+  if (previous) storage.set("codeart-job", previous);
   vm.runInNewContext(source, {
     document: {
       getElementById: get, createElement: element, documentElement: element()
@@ -136,7 +136,26 @@ async function run() {
   await pending;
   await flush();
   assert.equal(calls.filter(url => url.endsWith("/cancel")).length, 1);
-  console.log("4 web application regressions passed");
+
+  const storage = new Map();
+  const submitted = openPage(null, async url => response(
+    url === "/api/generate" ? {id: job.id} : job
+  ), storage);
+  await flush();
+  await submitted("generator").dispatchEvent({type: "submit", preventDefault() {}});
+  await flush();
+  assert.equal(submitted("summary").textContent, "Verified");
+  assert.equal(storage.get("codeart-job"), job.id);
+
+  const refreshed = openPage(null, async () => response(job), storage);
+  await flush();
+  assert.equal(refreshed("source").value, job.input_source);
+  assert.equal(refreshed("file-mode").checked, true);
+  assert.equal(refreshed("function").value, "f");
+  assert.equal(refreshed("file-scope").hidden, false);
+  await refreshed("function").dispatchEvent({type: "change"});
+  assert.equal(storage.get("codeart-job"), undefined);
+  console.log("5 web application regressions passed");
 }
 
 module.exports = run;
