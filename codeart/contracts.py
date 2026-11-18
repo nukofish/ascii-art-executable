@@ -221,13 +221,22 @@ class AttemptRecord:
 
 @dataclass(frozen=True)
 class LayoutOptions:
+    """Layout stage limits.
+
+    ``layout_timeout_s`` defaults to 60 s: a real 240-400 line function
+    measured 5-8 s with the current non-incremental ``can_join``, so the old
+    5 s default guaranteed ``LAYOUT_TIMEOUT`` for normally sized programs.
+    The real performance fix (incremental/cached ``can_join``) is tracked
+    separately; this default is only a budget widening.
+    """
+
     base_height_rows: int = 32
     initial_scale: float = 1.0
     growth_factor: float = 1.25
     max_attempts: int = 12
     max_columns: int = 800
     max_rows: int = 600
-    layout_timeout_s: float = 5.0
+    layout_timeout_s: float = 60.0
     font_metrics: FontMetrics = field(default_factory=FontMetrics)
 
 
