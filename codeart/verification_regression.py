@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import json
-from math import sqrt
 from pathlib import Path
 from time import monotonic
 
@@ -52,26 +51,23 @@ def load_cat_references(directory: Path) -> dict[int, CatScaleReference]:
     if base is None:
         return {}
     base_features = base["shapes"]["cat"]["features"]
-    tolerance = base["tolerance"]
     references = {}
     for scale in _CAT_SCALES:
         document = base if scale == 1 else _read_shape_metrics(directory, _CAT_BASE_HEIGHT * scale)
         if document is None:
             continue
         cat = document["shapes"]["cat"]
+        features = cat["features"]
+        if any("boundary_cells" not in features[name] for name, _ in _CAT_HOLE_MIN_CELLS):
+            continue
         holes = {}
         for name, _ in _CAT_HOLE_MIN_CELLS:
-            base_area = base_features[name]["cells"]
-            area_at_scale = base_area * scale ** 2
-            row, col = cat["features"][name]["centroid"]
+            feature = features[name]
+            row, col = feature["centroid"]
             holes[name] = HoleReference(
-                base_area=base_area,
+                base_area=base_features[name]["cells"],
                 center=(row - 0.5, col - 0.5),
-                boundary_cells=max(
-                    tolerance["area_rel"] * area_at_scale,
-                    tolerance["area_perimeter_factor"] * sqrt(area_at_scale),
-                    tolerance["area_min_cells"],
-                ),
+                boundary_cells=feature["boundary_cells"],
             )
         references[scale] = CatScaleReference(holes, cat["ear_gap_rows"])
     return references

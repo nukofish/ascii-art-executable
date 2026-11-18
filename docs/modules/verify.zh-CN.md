@@ -33,9 +33,9 @@ python -m scripts.run_verification --output-dir docs/reports/2026-11-09-pr-revie
 
 退出码 0 表示固定尺寸矩阵通过。个案失败时，报告保留已生成的源码和失败诊断。若流水线在验证前停止，四项状态都为 `NOT_RUN`，具体原因见 `generation_diagnostics`。行为项的 `NO_FIXTURE` 和 `OUTPUT_TOO_LARGE` 都是跳过原因，计入 144 次的是实际完成的比较。
 
-同一命令读取 B 提供的 `metrics_h{32,64,128}.json`，把猫头放大验收按 1×、2×、4× 单列在 `cat_scales` 中。h96 保留作 B 的 3× 回归。JSON 中 `passed` 要求固定矩阵和三档猫头检查全部通过，命令退出码仍对应 `fixed_matrix_passed`。缺少对应夹具时，该档报告 `NOT_RUN (MISSING_REFERENCE)`。三档都需要 h32 提供基础面积和容差。
+同一命令读取 B 提供的 `metrics_h{32,64,128}.json`，把猫头放大验收按 1×、2×、4× 单列在 `cat_scales` 中。h96 保留作 B 的 3× 回归。JSON 中 `passed` 要求固定矩阵和三档猫头检查全部通过，命令退出码仍对应 `fixed_matrix_passed`。缺少对应夹具或旧夹具缺少精确边界格数时，该档报告 `NOT_RUN (MISSING_REFERENCE)`。
 
-眼鼻的预期面积统一用 h32 格数乘以倍率平方，容差取 B 约定的相对项、周长近似项和最小格数中的最大值。质心和耳间距采用各档的参考值。B 以格中心为坐标，E 以零基格下标为坐标，适配器将质心的行、列各减 0.5。
+眼鼻的预期面积统一用 h32 格数乘以倍率平方。每个孔洞的面积容差采用 B 在相应高度夹具中记录的精确 `boundary_cells` 格数。质心和耳间距也采用各档的参考值。B 以格中心为坐标，E 以零基格下标为坐标，适配器将质心的行、列各减 0.5。
 
 ## 独立测试与回归接口
 
