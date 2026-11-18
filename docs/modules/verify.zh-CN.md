@@ -21,7 +21,7 @@
 - 编译和词法默认各限 5 秒，每个行为可执行程序的八组输入合计限 2 秒。所有操作受总截止时间约束。缺依赖、全局超时和用户取消使相关未完成项保持 `NOT_RUN`。阶段编译或执行超时使该项为 `FAIL`。macOS 和 Linux 上，编译与执行子进程在独立进程组运行，超时和取消会终止该组并回收子进程。
 - `diagnostics` 保存结构化原因，`skip_reasons` 按检查名记录跳过理由，`durations` 以秒记录尝试过的阶段。`compiler` 记录实际编译器路径、版本及选项，`behavior_cases_compared` 记录实际完成的对照数。四项状态供 F 独立展示。
 
-[v1.5 验收结论](../reports/E_verify.md#v15-budget-and-coverage-decision)记录了沿用预算和固定夹具覆盖率阈值的实测依据。Web 文件模式的预算仍待 F 确认。
+[v1.5 验收结论](../reports/E_verify.md#v15-budget-and-coverage-decision)记录了沿用预算和固定样例覆盖率阈值的实测依据。F 已签收整体覆盖率 **85%**、每只猫耳 **70%** 的阈值，并确认 Web 整文件生成的预分析和生成共用 **30 秒**预算及同一取消信号。[F 浏览器验收与签收 #53](https://github.com/nukofish/ascii-art-executable/pull/53)
 
 ## 固定尺寸验收
 

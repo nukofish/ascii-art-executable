@@ -73,8 +73,10 @@ seconds for attempted stages. `compiler` records the actual compiler path,
 version, and flags. `behavior_cases_compared` counts completed comparisons.
 
 The [v1.5 acceptance decision](../reports/E_verify.md#v15-budget-and-coverage-decision)
-records the measured basis for retaining the budgets and fixed-fixture
-coverage thresholds. F's confirmation of the Web file-mode budget is pending.
+records the measured basis for retaining the budgets and fixed-fixture thresholds
+of **85% overall** and **70% for each cat ear**. F signed off on these thresholds
+and confirmed that Web file-mode prepass and generation share one **30 s**
+budget and cancellation signal. [F browser acceptance and sign-off in #53](https://github.com/nukofish/ascii-art-executable/pull/53)
 
 ## Fixed-size acceptance
 
