@@ -36,34 +36,44 @@ Tests can inject substitutes through the pipeline dependencies.
 
 ## Checks and report fields
 
-- **Token.** E compares the effective tokens after dropping comments. For a
-  complete program, the raw comparison covers the artwork. E also compares
-  the preprocessed original and complete output, including the prefix. The first difference gives a zero-based
-  index and the original spelling and source position on each side. A side
-  that has reached the end is represented by `None`. A token failure leaves
-  geometry, compilation, and behavior at `NOT_RUN (TOKEN_NOT_PASS)`. A missing
-  lexer or a lexer stage timeout still allows the independent geometry check.
+- **Token.** E compares token kind, spelling, count, and order after dropping
+  comments. In whole-program mode, the raw comparison covers the artwork
+  tokens. E then preprocesses the original source and the complete generated
+  source, including its relocated prefix, with the same compiler profile and
+  compares the resulting streams. Both comparisons must pass for `token=PASS`.
+  The first difference gives a zero-based index, spelling, and position on
+  each side. For a preprocessing difference, positions refer to the
+  preprocessed streams. A side that has reached the end is `None`. A token
+  failure leaves geometry, compile, and behavior at `NOT_RUN (TOKEN_NOT_PASS)`.
+  A missing raw lexer or a raw lexer stage timeout still allows the independent
+  geometry check.
 - **Geometry.** E scans the actual characters to check boundaries, holes,
-  protected cells, placements, comment fill rules, and D's position and
-  cell counts. Wide characters occupy two cells in the whole-program canvas.
+  protected cells, placements, comment fill rules, and D's position and cell
+  counts. In whole-program mode, geometry and coverage apply only to the
+  artwork canvas. Wide characters occupy two cells there.
   Coverage divides nonblank fillable cells by
   the number of fillable cells. Spaces inside string literals do not
   contribute to coverage. The report counts ink outside the canvas,
   outside the mask, and in holes. Hole leakage also counts toward the
   out-of-bounds total.
-- **Compile.** After the token check passes, E runs an object build using
-  `-std=c11 -pedantic-errors` by default, even if geometry fails. In whole-program
-  mode the compile step covers the complete output and links it if it defines
-  `main`. The profile accepts old-style empty parameter lists in that mode. When geometry
-  passes and the input qualifies for behavior testing, the compile stage also
+- **Compile.** After the token check passes, E builds the complete delivered
+  source even if geometry fails. The default flags include
+  `-std=c11 -pedantic-errors`. Whole-program mode uses a compile-and-link build
+  when A reports `has_main` and an object build otherwise. The profile accepts
+  empty parameter lists such as `int main()` in that mode. When geometry passes
+  and the input qualifies for behavior testing, the compile stage also
   builds the original and generated executables with the test wrapper. A build
   failure or compile timeout sets `compile_status=FAIL` and leaves behavior at
   `NOT_RUN (COMPILE_NOT_PASS)`. The diagnostic identifies the failed build.
-- **Behavior.** E runs comparisons after the first three checks pass.
-  Without a matching fixture, the result is `NOT_RUN (NO_FIXTURE)`. With a
-  matching fixture and more than 100,000 canvas cells, it is
+- **Behavior.** E runs comparisons only after the first three checks pass and
+  only for an eligible built-in fixture. A successful custom whole-program
+  request has `NOT_RUN (NO_FIXTURE)` and zero comparisons. Web and CLI never
+  launch a custom program, including one that links successfully. If an
+  earlier check prevents behavior testing, the report gives that reason.
+  With a matching fixture and more than 100,000 canvas cells, behavior is
   `NOT_RUN (OUTPUT_TOO_LARGE)`.
-- **Budgets.** Lexing and compilation default to five seconds each. Each
+- **Budgets.** Each lexing pass and compiler invocation defaults to five seconds.
+  Preprocessing uses the compiler invocation limit. Each
   behavior executable gets two seconds for all eight inputs. The overall
   deadline bounds every operation. Missing dependencies, cancellation, and
   overall timeout leave unfinished checks at `NOT_RUN`. A compilation or
@@ -71,15 +81,19 @@ Tests can inject substitutes through the pipeline dependencies.
   and test children in their own process groups and kills and reaps them
   on cancellation or timeout.
 
-F displays the four statuses independently. `diagnostics` holds structured
-details, `skip_reasons` maps check names to reasons, and `durations` records
+F displays the four statuses independently. `PASS` means the check ran and met
+its criteria, `FAIL` means it detected a failure, and `NOT_RUN` records a
+skipped or incomplete check and its reason. A Web result can show `Verified`
+with `behavior=NOT_RUN (NO_FIXTURE)` when the three required checks pass.
+That behavior entry stays `NOT_RUN` in the Web and CLI reports. `diagnostics`
+holds structured details, `skip_reasons` maps check names to reasons, and `durations` records
 seconds for attempted stages. `compiler` records the actual compiler path,
 version, and flags. `behavior_cases_compared` counts completed comparisons.
 
 The [v1.5 acceptance decision](../reports/E_verify.md#v15-budget-and-coverage-decision)
-records the measured basis for retaining the budgets and fixed-fixture thresholds
+records the measured basis for retaining the fixed-fixture thresholds
 of **85% overall** and **70% for each cat ear**. F signed off on these thresholds
-and confirmed that Web file-mode prepass and generation share one **30 s**
+and confirmed that Web function-extraction mode shares one **30 s**
 budget and cancellation signal. [F browser acceptance and sign-off in #53](https://github.com/nukofish/ascii-art-executable/pull/53)
 
 ## Fixed-size acceptance

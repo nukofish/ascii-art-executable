@@ -60,15 +60,36 @@ for rows, fixture in ((32, None), (240, selection)):
 PY
 ```
 
+## v1.5 exact cat-hole tolerances
+
+E has used B's `boundary_cells` at each height since [#48](https://github.com/nukofish/ascii-art-executable/pull/48).
+The old allowance was `max(0.02 × area, 4 × sqrt(area), 2)` using the
+h32 hole area times the square of the scale. Values are in cells.
+
+| Cat scale | Old allowance per eye | Exact allowance per eye | Old nose allowance | Exact nose allowance |
+| --- | ---: | ---: | ---: | ---: |
+| 1× (h32) | 26.23 | 31 | 12.65 | 14 |
+| 2× (h64) | 52.46 | 63 | 25.30 | 30 |
+| 4× (h128) | 104.92 | 125 | 50.60 | 62 |
+
+The #48 run at `25650bc` passed 18/18 fixed outputs, 144/144 behavior
+comparisons, and all three cat scales. The #58 verification below used the
+same exact allowances with its updated cat mask.
+
 ## v1.5 budget and coverage decision
 
-Retain the existing limits. Coverage applies to the fixed fixtures at
-**85% total** and **70% for each cat ear**. Keep 5 s for input
-analysis and 5 s for layout, 5 s for output lexing and 5 s per compiler
-invocation, and 2 s per behavior executable's batch of eight inputs. The
-generation budget stays at 30 s and the fixed regression budget at 180 s
-overall, with at most 30 s per case. Run behavior comparisons for matching
-fixtures on canvases of at most 100,000 cells.
+Item 12 retained the then-current limits after measurement. The frozen
+fixed-fixture thresholds are **85% total** and **70% for each cat ear**.
+The measured baseline kept 5 s for input analysis and layout each, 5 s
+for output lexing and each compiler invocation, and 2 s per behavior
+executable's batch of eight inputs. The generation budget was 30 s and the
+fixed regression budget 180 s overall, with at most 30 s per case. Behavior
+comparisons ran for matching fixtures on canvases of at most 100,000 cells.
+
+[#59](https://github.com/nukofish/ascii-art-executable/pull/59) later raised
+the default layout-stage limit to 60 s. The default 30 s generation budget
+still caps layout, including on #58. The fixed-fixture thresholds above
+still apply.
 
 A clean checkout of `b66cbc94ac769e23fd8b1c84fd8e8e2e4f5cfe17` (includes
 [#42](https://github.com/nukofish/ascii-art-executable/pull/42)) ran on
@@ -112,8 +133,43 @@ python -m pytest -q tests/test_app.py tests/test_prepass.py tests/test_web_app.p
 ```
 
 F signed off on item 12 and the fixed-fixture thresholds of **85% overall**
-and **70% for each cat ear**. Web file-mode prepass and generation share one
+and **70% for each cat ear**. Web function-extraction prepass and generation share one
 **30 s** budget and the same cancellation signal. In Chromium, cancelling
 during prepass ended the job as `CANCELLED` with all four checks
 `NOT_RUN (CANCELLED)`. Web **Find functions** and CLI `--file` prepass have
 separate budgets. [F browser acceptance and sign-off in #53](https://github.com/nukofish/ascii-art-executable/pull/53)
+
+## Whole-program verification sign-off
+
+E reviewed [#58](https://github.com/nukofish/ascii-art-executable/pull/58) at
+`2ac4f95a4e97cacda662c7243008a43fcd935cfd` with a clean checkout. Whole-program
+input extends the v1.5 single-function scope and follows E's four-check
+contract. `token` covers both the raw artwork tokens and the preprocessed
+complete source, `geometry` covers the canvas, and `compile` builds the complete
+output and links it when `main` is present. The two token comparisons share
+one status and report the first mismatch. Details are in the
+[verification guide](../modules/verify.md#checks-and-report-fields).
+
+| Web input | Token | Geometry | Compile | Behavior |
+| --- | --- | --- | --- | --- |
+| UTF-8 program with a macro and `main` | PASS | PASS | PASS (linked) | NOT_RUN (NO_FIXTURE) |
+| Translation unit without `main` | PASS | PASS | PASS (object) | NOT_RUN (NO_FIXTURE) |
+| `main` calls a declared function with no definition | PASS | PASS | FAIL (link) | NOT_RUN (COMPILE_NOT_PASS) |
+| Relocating a macro redefinition changes the expansion | FAIL | NOT_RUN (TOKEN_NOT_PASS) | NOT_RUN (TOKEN_NOT_PASS) | NOT_RUN (TOKEN_NOT_PASS) |
+
+The local HTTP probes checked that downloaded JSON preserved each status and
+reason. They recorded zero behavior comparisons and zero calls to the
+execution entry point for custom code.
+
+On macOS arm64 with Python 3.12.10, Apple Clang 21.0.0 and libclang bindings
+18.1.1, `python -m scripts.run_verification --output-dir "$run_dir/fixed"`
+with a fresh run directory produced `passed=true`, 18/18 fixed outputs,
+144/144 comparisons, and PASS at cat 1×, 2×, and 4×. The run took 6.82 s.
+Overall coverage was 99.05–99.90%, with a minimum of 91.67% per cat ear.
+The following targeted suite passed 72 tests.
+
+```sh
+NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost \
+python -m pytest -q -p no:cacheprovider tests/test_program.py tests/test_verify.py \
+  tests/test_verification_cli.py tests/test_app.py tests/test_web_app.py --tb=short
+```
