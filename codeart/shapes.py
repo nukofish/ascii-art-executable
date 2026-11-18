@@ -42,6 +42,7 @@ __all__ = [
     "NOTCH_CENTER_FRACTION",
     "NOTCH_MIN_WINDOW_CELLS",
     "NOTCH_WINDOW_FRACTION",
+    "SLIVER_HOLE_MAX_CELLS",
     "FontMetrics",
     "Mask",
     "ShapeError",
@@ -75,6 +76,25 @@ NOTCH_WINDOW_FRACTION = 0.02
 #: off a single hand-picked column even at the smallest mask heights, where
 #: ``round(width * NOTCH_WINDOW_FRACTION)`` alone would select just one.
 NOTCH_MIN_WINDOW_CELLS = 3
+
+#: Largest fully enclosed disallowed component (4-connected, in cells) that is
+#: treated as a rasterisation sliver and filled back to allowed.
+#:
+#: The cat head is the union of an ellipse and two triangles.  A cell is allowed
+#: when its *centre* falls inside that union, so where the ear triangle and the
+#: head ellipse only graze each other the union can leave a one- or two-cell
+#: gap that no shape covers; measured at 78 rows the slivers are single cells at
+#: ``(26, 15)`` and ``(26, 140)``, between the ear and the head.
+#:
+#: Those gaps are not design holes: across 32..256 rows the smallest design hole
+#: is the nose at 8 cells (33 rows; 10 cells at 32 rows) and the eyes start at
+#: 43 cells (32 rows).  A component of at most three cells can therefore only be
+#: seam residue, and closing it restores the invariant the verifier enforces:
+#: exactly three holes (two eyes + nose) at every height.
+#: Across 32..256 rows the seam slivers are one or two cells (e.g. 1 cell at
+#: 37/75/78/84 rows, 2 cells at 54/57/72/90 rows), so a threshold of three
+#: covers every observed case with one cell of headroom.
+SLIVER_HOLE_MAX_CELLS = 3
 
 #: Normalised units spanned by the full mask height (``v ∈ [-1, 1]``).
 _SHAPE_V_SPAN = 2.0
@@ -473,6 +493,112 @@ def _spans_from_rows(allowed: Sequence[Sequence[bool]]) -> tuple[tuple[tuple[int
     return tuple(spans)
 
 
+def _close_sliver_holes(
+    allowed: list[list[bool]],
+    protected: Iterable[tuple[int, int]] = (),
+) -> int:
+    """Fill tiny enclosed disallowed components back to allowed.
+
+    A *sliver hole* is a 4-connected component of disallowed cells that
+
+    * does not touch the mask border (otherwise it is background, not a hole),
+    * is at most :data:`SLIVER_HOLE_MAX_CELLS` cells, and
+    * contains no *protected* cell — a cell the analytic geometry declares to
+      be a design hole (an eye or the nose).  At the verified heights these
+      holes are far larger than the threshold, so the guard never triggers
+      there; it only keeps very small masks (``height < 32`` is not verified by
+      E) from having their one-cell eyes or nose filled in.
+
+    Such components are rasterisation residue where the ear triangles and the
+    head ellipse only graze each other, so they are filled to ``True``.  The
+    caller must rebuild ``spans`` afterwards: ``allowed`` is the single source
+    of truth for fillability.
+
+    Components are found over maximal horizontal runs of disallowed cells and
+    joined across adjacent rows when their column ranges overlap (4-connectivity
+    of the cells).  That keeps the pass proportional to the number of runs, not
+    to the number of cells: C builds many masks while fitting a layout, and a
+    full-grid scan per attempt would make every layout slower.
+
+    Returns the number of cells filled.
+    """
+    rows = len(allowed)
+    cols = len(allowed[0]) if rows else 0
+    if not rows or not cols:
+        return 0
+    protected_cells = set(protected)
+
+    runs: list[tuple[int, int, int]] = []
+    for row_index, row in enumerate(allowed):
+        col = 0
+        while col < cols:
+            if row[col]:
+                col += 1
+                continue
+            start = col
+            while col < cols and not row[col]:
+                col += 1
+            runs.append((row_index, start, col))
+
+    parent = list(range(len(runs)))
+
+    def find(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root, right_root = find(left), find(right)
+        if left_root != right_root:
+            parent[right_root] = left_root
+
+    by_row: dict[int, list[int]] = {}
+    for index, (row_index, _start, _end) in enumerate(runs):
+        by_row.setdefault(row_index, []).append(index)
+    for row_index in range(1, rows):
+        previous = by_row.get(row_index - 1, ())
+        current = by_row.get(row_index, ())
+        above = below = 0
+        while above < len(previous) and below < len(current):
+            _r, above_start, above_end = runs[previous[above]]
+            _r, below_start, below_end = runs[current[below]]
+            if above_start < below_end and below_start < above_end:
+                union(previous[above], current[below])
+            if above_end <= below_end:
+                above += 1
+            if below_end <= above_end:
+                below += 1
+
+    components: dict[int, list[int]] = {}
+    for index in range(len(runs)):
+        components.setdefault(find(index), []).append(index)
+
+    filled = 0
+    for members in components.values():
+        cells = sum(runs[index][2] - runs[index][1] for index in members)
+        if cells > SLIVER_HOLE_MAX_CELLS:
+            continue
+        if any(
+            runs[index][0] in (0, rows - 1)
+            or runs[index][1] == 0
+            or runs[index][2] == cols
+            for index in members
+        ):
+            continue
+        cell_list = [
+            (runs[index][0], col)
+            for index in members
+            for col in range(runs[index][1], runs[index][2])
+        ]
+        if any(cell in protected_cells for cell in cell_list):
+            continue
+        for row_index, col in cell_list:
+            allowed[row_index][col] = True
+        filled += cells
+    return filled
+
+
 # ---------------------------------------------------------------------------
 # public entry point
 # ---------------------------------------------------------------------------
@@ -550,7 +676,18 @@ def build_mask(
     else:
         allowed, features = _code_rows(cols, rows, aspect, ctx)
 
+    if kind == "cat":
+        # The ear triangles and the head ellipse are rasterised independently
+        # from cell centres, so their seam can enclose a one- or two-cell gap.
+        # Close those slivers here, before ``spans`` is derived, so the mask keeps
+        # the invariant E checks: exactly the two eyes and the nose as holes.
+        _close_sliver_holes(
+            allowed,
+            protected=features["eyes"] | features["nose"],
+        )
+
     allowed_t = tuple(tuple(bool(v) for v in row) for row in allowed)
+    # Rebuilt *after* sliver closing: ``spans`` must match ``allowed`` exactly.
     spans = _spans_from_rows(allowed_t)
 
     # An empty mask would hand C a canvas it can never fill: reject it here

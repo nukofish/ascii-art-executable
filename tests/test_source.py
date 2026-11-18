@@ -9,8 +9,8 @@ import pytest
 
 from codeart import source
 from codeart.contracts import (
-    ErrorCode, GenerationRequest, RunContext, ShapeSpec, SourceModel,
-    StageError, Token, VerificationProfile,
+    ErrorCode, GenerationRequest, GenerationStatus, LayoutOptions, RunContext,
+    ShapeSpec, SourceModel, StageError, Token, VerificationProfile,
 )
 from codeart.pipeline import generate
 from codeart.verification_fixtures import BUILTIN_FIXTURES, select_builtin
@@ -148,6 +148,41 @@ def test_real_pipeline_builtin_matrix(name, shape):
     assert tuple(getattr(report, f"{stage}_status").value
                  for stage in ("token", "geometry", "compile", "behavior")) == ("PASS",) * 4
     assert report.behavior_cases_compared == 8
+
+
+def test_large_program_passes_cat_geometry_at_former_sliver_height():
+    """A ~250-line function lands on 78 rows, where the cat used to show 5 holes.
+
+    Before sliver closing, the layout's first successful mask at height 78
+    reported two phantom one-cell holes at the ear/head seam.  E's
+    ``cat_features`` check rejects that (``len(holes) != 3``), so an ordinary
+    program failed the whole pipeline with ``GEOMETRY_MISMATCH``.  The layout
+    budget is widened to 120 s: layout performance is a separate issue and is
+    not part of this regression.
+    """
+    lines = ["int big(int seed) {", "    int a = seed;", "    int b = 0;"]
+    for i in range(120):
+        lines += [f"    b = b + a * {i} + ({i} % 7);",
+                  f"    if (b > {i*10}) {{ a = a - {i}; }} else {{ a = a + {i}; }}"]
+    lines += ["    return a + b;", "}"]
+    program = "\n".join(lines) + "\n"
+
+    result = generate(GenerationRequest(
+        program,
+        ShapeSpec("cat"),
+        layout_options=LayoutOptions(layout_timeout_s=120),
+        timeout_s=180,
+    ))
+
+    assert not result.diagnostics, result.diagnostics
+    assert result.status != GenerationStatus.FAILED, result.status
+    assert result.plan is not None and result.plan.mask.height == 78
+    report = result.verification
+    assert report is not None
+    assert report.geometry_status.value == "PASS"
+    holes = [hole["cells"] for hole in report.geometry_metrics["holes"]]
+    assert len(holes) == 3, holes
+    assert min(holes) >= 4, holes
 
 
 @pytest.mark.parametrize("text", [
