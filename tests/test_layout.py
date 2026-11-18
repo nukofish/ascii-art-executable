@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import time
 from threading import Event
 from time import monotonic
@@ -24,6 +25,19 @@ from codeart.contracts import (
 from codeart.fill import render_source
 from codeart.layout import fit_layout
 from codeart.source import analyze_source, can_join
+
+
+CLANG = shutil.which("clang")
+try:
+    import clang.cindex  # noqa: F401
+
+    HAS_LIBCLANG = True
+except Exception:
+    HAS_LIBCLANG = False
+requires_clang = pytest.mark.skipif(
+    CLANG is None or not HAS_LIBCLANG,
+    reason="Clang and libclang are required",
+)
 
 
 def context(seconds=30):
@@ -403,6 +417,7 @@ def test_layout_budget_is_not_reset_for_the_second_attempt():
 # --------------------------------------------------- default layout budget
 
 
+@requires_clang
 def test_default_layout_budget_fits_a_real_sized_program():
     """The default budget must cover a normally sized function.
 
