@@ -77,12 +77,15 @@ so the CLI, web result and downloaded report use one top-level decision.
 ## Errors, time budgets and cancellation
 
 Each stage receives the same `RunContext`. Check `ctx.check()` in long
-loops and before expensive work. A context's deadline is enforced by both
-its injected clock and real monotonic time, starting when the context is
-created. Use `RunContext.within(parent, timeout)` to cap child contexts
-without restarting the parent's budget. Limit each subprocess to the smaller
-of its time limit and `ctx.remaining_s()`. Terminate and reap subprocesses
-when cancelled or timed out. Layout retries share one stage budget.
+loops and before expensive work. `RunContext` enforces its deadline using
+both the injected clock and real monotonic time. Contexts derived with
+`RunContext.within(parent, timeout)` inherit both limits from the parent
+and add their own timeout. Limit each subprocess to the smaller of its time
+limit and `ctx.remaining_s()`. Terminate and reap subprocesses when cancelled
+or timed out.
+
+C checks the shared `RunContext` for cancellation and the overall deadline.
+Its layout-stage deadline uses the injected clock and is shared by all retries.
 
 A, B, C and D raise `PipelineError(Diagnostic(...))` for diagnosed failures.
 `PipelineError` is the canonical name for the stage failure; `StageError` is a

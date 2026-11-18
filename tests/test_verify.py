@@ -12,6 +12,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import Event, Thread
 from time import monotonic, sleep
+from unittest.mock import MagicMock, Mock, call
 
 import pytest
 
@@ -20,7 +21,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from codeart.procutil import BuildFailed, BuildSession, CommandTimedOut, run_command, WorkStopped
-from codeart import contracts, source
+from codeart import contracts, procutil, source
 from codeart.contracts import Diagnostic, RunContext, StageError
 from codeart.shapes import FontMetrics, ShapeSpec, SizeRequest, build_mask, geometry_metrics
 from codeart.verification_fixtures import BUILTIN_FIXTURES, select_builtin
@@ -375,20 +376,51 @@ def test_frozen_clock_lexer_distinguishes_stage_and_total_timeout(
 
 
 @requires_clang
-def test_frozen_clock_shares_total_budget_between_compiler_commands(tmp_path):
+def test_frozen_clock_shares_total_budget_between_compiler_commands(monkeypatch):
     case = make_case("int f(void) { return 0; }\n", "f")
-    compiler = tmp_path / "slow-clang"
-    compiler.write_text(
-        f"#!{sys.executable}\n"
-        "import os, sys, time\n"
-        "time.sleep(0.3)\n"
-        f"os.execv({CLANG!r}, [{CLANG!r}, *sys.argv[1:]])\n",
-        encoding="utf-8",
-    )
-    compiler.chmod(0o755)
-    report = run(case, selected_profile=profile(compiler=str(compiler), compile_timeout=2.0),
-                 ctx=RunContext(100.5, clock=lambda: 100.0))
+    lexed = clang_lex_for_test(case[2].source_text, ctx=context())
+    # Binary fractions make the remaining-budget assertion exact.
+    total = 0.0625
+    version_elapsed = 0.03125
+    remaining = total - version_elapsed
+    now = 8.0
+    monkeypatch.setattr(contracts, "monotonic", lambda: now)
+    monkeypatch.setattr(procutil, "monotonic", lambda: now)
 
+    version_child = MagicMock()
+    version_child.__enter__.return_value = version_child
+    version_child.returncode = 0
+    compile_child = MagicMock()
+    compile_child.__enter__.return_value = compile_child
+    start_compiler = Mock(side_effect=[version_child, compile_child])
+    monkeypatch.setattr(procutil.subprocess, "Popen", start_compiler)
+    monkeypatch.setattr(procutil, "stop_process", Mock())
+
+    def finish_version(*, timeout):
+        nonlocal now
+        assert timeout >= version_elapsed
+        now += version_elapsed
+        return b"test compiler 1", b""
+
+    def compile_object(*, timeout=None):
+        nonlocal now
+        if timeout is None:
+            return b"", b""
+        assert timeout == remaining
+        now += timeout
+        raise subprocess.TimeoutExpired("test compiler", timeout)
+
+    version_child.communicate.side_effect = finish_version
+    compile_child.communicate.side_effect = compile_object
+    selected = profile(lex_source=lambda text, *, ctx: lexed,
+                       compiler=CLANG, compile_timeout=1.0)
+    ctx = RunContext(100.0 + total, clock=lambda: 100.0)
+    report = run(case, selected_profile=selected, ctx=ctx)
+
+    version_call, compile_call = start_compiler.call_args_list
+    assert version_call.args[0][-1] == "--version"
+    assert "-c" in compile_call.args[0]
+    assert compile_child.communicate.call_args_list == [call(timeout=remaining), call()]
     assert report.compiler is not None
     assert statuses(report) == ("PASS", "PASS", "NOT_RUN", "NOT_RUN")
     assert report.skip_reasons["compile"] == "PIPELINE_TIMEOUT"
