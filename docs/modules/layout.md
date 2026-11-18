@@ -108,8 +108,29 @@ after height rounding, so a base of 32 rounded to 33 rows reports
 ## Cancellation and time budgets
 
 A single layout-stage budget is derived once, before the retry loop, so every
-attempt shares it and a new attempt never resets the clock. The budget is
-tracked in two domains at once:
+attempt shares it and a new attempt never resets the clock.
+
+`layout_timeout_s` defaults to **60 s**. The old 5 s default was below the
+measured cost of laying out a normally sized function with the current,
+non-incremental `can_join` (real `build_mask`/`can_join`, `base_height_rows=32`,
+`max_columns=800`, `max_rows=600`):
+
+| tokens | approx. lines | measured layout time |
+|---|---|---|
+| 2243 | 123 | 1.96 s |
+| 4463 | 243 | 5.11 s |
+| 6683 | 363 | 8.06 s |
+
+So any program above roughly 240 lines exceeded 5 s and ended in
+`LAYOUT_TIMEOUT` regardless of its actual layout. 60 s covers the 240-400 line
+range with headroom while still bounding a genuinely runaway layout.
+
+This is a budget widening, not a performance fix: `can_join` still re-lexes
+the whole contiguous run on every check, which makes layout O(n²). Large
+functions should still rely on making `can_join` incremental/cached; that
+optimization is tracked as a separate layout item.
+
+The budget is tracked in two domains at once:
 
 ```
 stage_deadline      = min(clock() + layout_timeout_s, ctx.deadline)

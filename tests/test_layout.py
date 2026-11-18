@@ -23,6 +23,7 @@ from codeart.contracts import (
 )
 from codeart.fill import render_source
 from codeart.layout import fit_layout
+from codeart.source import analyze_source, can_join
 
 
 def context(seconds=30):
@@ -397,6 +398,44 @@ def test_layout_budget_is_not_reset_for_the_second_attempt():
     assert history[-1].reason.startswith(ErrorCode.LAYOUT_TIMEOUT.value)
     assert 0.01 <= clock["t"] < 0.02
     assert clock["t"] == pytest.approx(0.011)
+
+
+# --------------------------------------------------- default layout budget
+
+
+def test_default_layout_budget_fits_a_real_sized_program():
+    """The default budget must cover a normally sized function.
+
+    Slow test: about 5 s with the current ``can_join``, which re-lexes the
+    whole contiguous run on every check (layout is O(n^2)).  It walks the
+    default ``LayoutOptions()`` and the real ``analyze_source``/``can_join``,
+    reproducing the ~243-line program that used to fail with LAYOUT_TIMEOUT
+    under the old 5 s default.  The actual performance fix (incremental or
+    cached ``can_join``) is a separate layout item, not part of this budget
+    widening.
+    """
+    lines = ["int big(int seed) {", "    int a = seed;", "    int b = 0;"]
+    for i in range(120):
+        lines += [f"    b = b + a * {i} + ({i} % 7);",
+                  f"    if (b > {i*10}) {{ a = a - {i}; }} else {{ a = a + {i}; }}"]
+    lines += ["    return a + b;", "}"]
+    program = "\n".join(lines) + "\n"
+
+    model = analyze_source(program)
+    assert len(model.tokens) > 4000  # the measured 4463-token / ~243-line case
+
+    plan = fit_layout(model, ShapeSpec("circle"), LayoutOptions(),
+                      mask_builder=build_mask, join_checker=can_join,
+                      ctx=context(120))
+
+    assert [p.token_index for p in plan.placements] == [t.index for t in model.tokens]
+    assert len(plan.placements) == len(model.tokens)
+
+
+def test_default_layout_budget_stays_at_sixty_seconds():
+    # Guard the widened default against an accidental revert to 5 s: a real
+    # 240-400 line function takes 5-8 s with the current, unoptimized can_join.
+    assert LayoutOptions().layout_timeout_s == 60.0
 
 
 # ------------------------------------------------------- legacy run contexts
