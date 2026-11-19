@@ -34,26 +34,33 @@ from fixtures.verification_reports import make_verifier_stub
 
 CLANG = shutil.which("clang")
 requires_clang = pytest.mark.skipif(CLANG is None, reason="Clang is required")
-_RAW_TOKEN = re.compile(r"(\w+) '(.*?)'\t[^\n]*\tLoc=<<stdin>:(\d+):(\d+)>\n", re.DOTALL)
+# Clang 20 and earlier separate the fields with tabs and put flags such as
+# [StartOfLine] before Loc=; Clang 21 and later pad with spaces and put them after.
+_RAW_TOKEN = re.compile(
+    r"(\w+)[ \t]+'(.*?)'[ \t]+(?:\[\w+\][ \t]*)*Loc=<<stdin>:(\d+):(\d+)>[^\n]*\n",
+    re.DOTALL,
+)
 
 
 def clang_lex_for_test(source, *, ctx):
     ctx.check()
     result = subprocess.run(
         [CLANG, "-std=c11", "-x", "c", "-fsyntax-only", "-Xclang", "-dump-raw-tokens", "-"],
-        input=source, text=True, capture_output=True, check=True,
+        # Bytes keep Windows text mode from turning "\n" into CRLF on stdin.
+        input=source.encode("utf-8"), capture_output=True, check=True,
         timeout=ctx.remaining_s(),
     )
+    stderr = result.stderr.decode("utf-8").replace("\r\n", "\n")
     tokens = []
     offset = 0
-    for match in _RAW_TOKEN.finditer(result.stderr):
-        assert match.start() == offset, result.stderr
+    for match in _RAW_TOKEN.finditer(stderr):
+        assert match.start() == offset, stderr
         offset = match.end()
         kind, spelling, line, column = match.groups()
         if kind == "unknown" and spelling.isspace():
             continue
         tokens.append(LexedToken(kind, spelling, int(line), int(column), kind == "comment"))
-    assert offset == len(result.stderr), result.stderr
+    assert offset == len(stderr), stderr
     return tokens
 
 

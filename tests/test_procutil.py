@@ -76,9 +76,7 @@ def test_frozen_clock_stops_and_reaps_real_child(
 
     def track_child(*args, **kwargs):
         child = popen(*args, **kwargs)
-        # On Windows stop_process runs taskkill to stop the child's tree.
-        if child.args[0] != "taskkill":
-            children.append(child)
+        children.append(child)
         return child
 
     monkeypatch.setattr(procutil.subprocess, "Popen", track_child)
@@ -98,7 +96,8 @@ def test_frozen_clock_stops_and_reaps_real_child(
 def test_timeout_stops_descendants_that_hold_the_pipes(tmp_path):
     # A compiler wrapper (a .cmd shim on Windows) starts its own child, which
     # inherits stdout. Killing only the wrapper would leave communicate()
-    # waiting for the grandchild to exit.
+    # waiting for the grandchild to exit. POSIX kills the process group;
+    # Windows ends the job object the child was placed in.
     script = (
         "import subprocess, sys, time; "
         "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "

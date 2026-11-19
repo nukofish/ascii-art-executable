@@ -55,6 +55,38 @@ def check_context(ctx) -> None:
         raise WorkStopped("PIPELINE_TIMEOUT")
 
 
+class _WindowsJob:
+    """A job object holding one child and every process it starts.
+
+    TerminateProcess stops only the child. A wrapper such as a .cmd compiler
+    shim leaves descendants that keep the pipes open, so `run_command` puts
+    each child in a job and `stop_process` ends the whole job at once.
+    """
+
+    def __init__(self, proc):
+        import ctypes
+        from ctypes import wintypes
+
+        self._kernel32 = kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel32.CreateJobObjectW.argtypes = (wintypes.LPVOID, wintypes.LPCWSTR)
+        kernel32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+        kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        self.handle = kernel32.CreateJobObjectW(None, None)
+        if self.handle and not kernel32.AssignProcessToJobObject(self.handle, int(proc._handle)):
+            self.close()
+
+    def terminate(self):
+        if self.handle:
+            self._kernel32.TerminateJobObject(self.handle, 1)
+
+    def close(self):
+        if self.handle:
+            self._kernel32.CloseHandle(self.handle)
+            self.handle = None
+
+
 def stop_process(proc: subprocess.Popen | None) -> None:
     """Kill a child and its descendants. The caller reaps the child."""
     if proc is None or proc.pid is None:
@@ -63,17 +95,9 @@ def stop_process(proc: subprocess.Popen | None) -> None:
         if os.name == "posix":
             os.killpg(proc.pid, signal.SIGKILL)
         else:
-            # TerminateProcess stops only the child. A wrapper such as a .cmd
-            # compiler shim leaves descendants that keep our pipes open, so
-            # stop the whole tree while the child's pid is still reserved.
-            try:
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL, timeout=10, check=False,
-                )
-            except (OSError, subprocess.TimeoutExpired):
-                pass
+            job = getattr(proc, "_codeart_job", None)
+            if job is not None:
+                job.terminate()
             proc.kill()
     except ProcessLookupError:
         pass
@@ -99,6 +123,19 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
         )
     except OSError as exc:
         raise DependencyUnavailable(str(exc)) from exc
+    job = None
+    if os.name == "nt" and isinstance(getattr(proc, "_handle", None), int):
+        # The child joins the job a moment after it starts, before a wrapper
+        # such as cmd.exe has had time to start a compiler of its own.
+        job = proc._codeart_job = _WindowsJob(proc)
+    try:
+        return _wait_for(proc, args, ctx, deadline, real_deadline)
+    finally:
+        if job is not None:
+            job.close()
+
+
+def _wait_for(proc, args, ctx, deadline, real_deadline):
     with proc:
         try:
             while True:

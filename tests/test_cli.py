@@ -77,6 +77,16 @@ def test_cli_skipped_required_check_returns_nonzero(monkeypatch):
     assert cli.main(["--sample", "max2"]) == 1
 
 
+def _symlink_or_skip(link, target):
+    try:
+        link.symlink_to(target)
+    except OSError as exc:
+        # Windows allows symlinks only with Developer Mode or administrator rights.
+        if os.name == "nt" and getattr(exc, "winerror", None) == 1314:
+            pytest.skip("Creating symlinks needs Developer Mode or administrator rights")
+        raise
+
+
 @pytest.mark.parametrize(("option", "alias"), [
     ("--source", "direct"), ("--source", "symlink"),
     ("--output", "direct"), ("--output", "hardlink"),
@@ -88,7 +98,7 @@ def test_cli_rejects_report_paths_that_alias_source_files(tmp_path, option, alia
     report = source_file
     if alias == "symlink":
         report = tmp_path / "report.json"
-        report.symlink_to(source_file)
+        _symlink_or_skip(report, source_file)
     elif alias == "hardlink":
         report = tmp_path / "report.json"
         os.link(source_file, report)
@@ -127,7 +137,7 @@ def test_cli_rejects_output_paths_that_alias_input(tmp_path, option, alias):
     output = source_file
     if alias == "symlink":
         output = tmp_path / "output.c"
-        output.symlink_to(source_file)
+        _symlink_or_skip(output, source_file)
     elif alias == "hardlink":
         output = tmp_path / "output.c"
         os.link(source_file, output)
