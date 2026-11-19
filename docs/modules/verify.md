@@ -40,10 +40,16 @@ Tests can inject substitutes through the pipeline dependencies.
   comments. In whole-program mode, the raw comparison covers the artwork
   tokens. E then preprocesses the original source and the complete generated
   source, including its relocated prefix, with the same compiler profile and
-  compares the resulting streams. Both comparisons must pass for `token=PASS`.
+  compares the resulting streams. `__LINE__`, `__DATE__`, `__TIME__` and
+  `__TIMESTAMP__` are neutralised for this comparison only, because the layout
+  necessarily moves lines and the clock can change between runs; values such
+  as `assert` messages therefore report the generated program's own lines.
+  Both comparisons must pass for `token=PASS`.
   The first difference gives a zero-based index, spelling, and position on
-  each side. For a preprocessing difference, positions refer to the
-  preprocessed streams. A side that has reached the end is `None`. A token
+  each side. For a preprocessing difference, each line names the line of the
+  original or generated source that produced the token (0 for a header), and
+  the diagnostic points at the original source line without a column. A side
+  that has reached the end is `None`. A token
   failure leaves geometry, compile, and behavior at `NOT_RUN (TOKEN_NOT_PASS)`.
   A missing raw lexer or a raw lexer stage timeout still allows the independent
   geometry check.

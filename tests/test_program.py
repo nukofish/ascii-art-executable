@@ -146,11 +146,10 @@ def test_continued_macro_stays_intact_in_the_prefix():
 
 @pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")
 def test_macro_reordering_that_changes_expansion_fails_token_check():
-    source = """#define VALUE 1
-int first(void) { return VALUE; }
-#undef VALUE
-#define VALUE 2
-int main(void) { return first() + VALUE; }
+    source = """static int N = 1;
+int first(void) { return N; }
+#define N 2
+int main(void) { return first() + N; }
 """
 
     result = generate(GenerationRequest(
@@ -160,8 +159,94 @@ int main(void) { return first() + VALUE; }
     assert result.status.value == "FAILED"
     assert result.verification.token_status.value == "FAIL"
     assert result.verification.geometry_status.value == "NOT_RUN"
-    assert any("preprocessor output" in item.message
-               for item in result.verification.diagnostics)
+    diagnostic = next(item for item in result.verification.diagnostics
+                      if item.code.value == "TOKEN_MISMATCH")
+    assert "macro expansion" in diagnostic.message
+    # The position names the user's own line, not a line of preprocessor output.
+    assert (diagnostic.line, diagnostic.column) == (1, None)
+    assert result.verification.first_diff.expected.line == 1
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")
+def test_undef_after_program_code_is_rejected_where_it_appears():
+    source = """#define VALUE 1
+int first(void) { return VALUE; }
+#undef VALUE
+int main(void) { return first(); }
+"""
+
+    result = generate(GenerationRequest(source, ShapeSpec("circle"), program_mode=True))
+
+    assert result.status.value == "FAILED"
+    assert result.diagnostics[0].code.value == "UNSUPPORTED_SOURCE"
+    assert result.diagnostics[0].line == 3
+    assert "#undef" in result.diagnostics[0].message
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")
+@pytest.mark.parametrize("source, line", [
+    # Inside a function body, e.g. a platform-specific screen clear.
+    ("#include <stdio.h>\nstatic void clear(void) {\n#ifdef _WIN32\n"
+     "    puts(\"cls\");\n#else\n    puts(\"clear\");\n#endif\n}\n"
+     "int main(void) { clear(); return 0; }\n", 3),
+    # At file scope after earlier code. Moving it would break -DDEBUG builds.
+    ("#include <stdio.h>\nstatic void show(void) { puts(\"x\"); }\n"
+     "#ifdef DEBUG\nstatic void debug(void) { show(); }\n#endif\n"
+     "int main(void) { show(); return 0; }\n", 3),
+])
+def test_conditional_code_after_program_code_is_rejected(source, line):
+    result = generate(GenerationRequest(source, ShapeSpec("cat"), program_mode=True))
+
+    assert result.status.value == "FAILED"
+    assert result.diagnostics[0].code.value == "UNSUPPORTED_SOURCE"
+    assert result.diagnostics[0].line == line
+    assert "conditional block" in result.diagnostics[0].message
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")
+def test_directive_only_conditionals_may_follow_program_code():
+    source = """#ifdef _WIN32
+#include <windows.h>
+#endif
+#include <stdio.h>
+static int one(void) { return 1; }
+#ifndef LIMIT
+#define LIMIT 3
+#endif
+int main(void) { printf("%d\\n", LIMIT + one()); return 0; }
+"""
+
+    result = generate(GenerationRequest(source, ShapeSpec("circle"), program_mode=True))
+
+    assert result.status.value == "OK", result.diagnostics
+    assert "#ifndef LIMIT\n#define LIMIT 3\n#endif\n" in result.rendered.preamble_text
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")
+def test_line_and_clock_macros_do_not_fail_the_expansion_check(tmp_path):
+    source = """#include <assert.h>
+#include <stdio.h>
+static int checked(int value) {
+    assert(value > 0);
+    return value;
+}
+int main(void) {
+    printf("%d %d %s %s\\n", checked(2), __LINE__ > 0, __DATE__, __TIME__);
+    return 0;
+}
+"""
+
+    result = generate(GenerationRequest(source, ShapeSpec("cat"), program_mode=True))
+
+    assert result.status.value == "OK", result.diagnostics
+    assert result.verification.token_status.value == "PASS"
+    assert result.verification.compile_status.value == "PASS"
+    generated = tmp_path / "generated.c"
+    generated.write_text(result.rendered.source_text, encoding="utf-8")
+    binary = tmp_path / "generated"
+    subprocess.run(["clang", "-std=c11", str(generated), "-o", str(binary)], check=True)
+    assert subprocess.run([str(binary)], capture_output=True, text=True,
+                          check=True).stdout.startswith("2 1 ")
 
 
 @pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")

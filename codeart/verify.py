@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
+from dataclasses import replace
 from itertools import zip_longest
+import re
 from time import monotonic
 
 from ._verification_geometry import check_geometry
@@ -145,19 +147,51 @@ def _check_tokens(model, rendered, profile, ctx, report):
     return None
 
 
+# Layout necessarily moves code to other lines, so __LINE__ (and macros such as
+# assert that expand it) would always differ, and the clock macros can change
+# between the two preprocessor runs. Neutralise them for the comparison only;
+# the rest of the expansion must still match exactly.
+_PREPROCESS_FLAGS = (
+    "-E", "-D__LINE__=0", "-D__DATE__=0", "-D__TIME__=0", "-D__TIMESTAMP__=0",
+    "-Wno-builtin-macro-redefined",
+)
+_LINE_MARKER = re.compile(r'^# (\d+) "((?:[^"\\]|\\.)*)"')
+
+
 def _preprocessed_tokens(source, profile, builds, compiler, ctx):
+    """Return expanded tokens whose lines refer to the given source text.
+
+    Tokens that come from included headers get line 0.
+    """
     path = builds.root / "program.c"
     path.write_text(source if source.endswith("\n") else source + "\n",
                     encoding="utf-8", newline="")
     result = run_command(
-        [compiler.path, *compiler.flags, "-E", "-P", str(path)],
+        [compiler.path, *compiler.flags, *_PREPROCESS_FLAGS, str(path)],
         cwd=builds.root, env=builds.env, ctx=ctx, timeout=profile.compile_timeout,
     )
     if result.returncode != 0:
         raise BuildFailed(result)
+
+    # Blank out line markers and remember which source line each output line has.
+    lines = result.stdout.split("\n")
+    origins = []
+    in_source, source_line = False, 0
+    for index, line in enumerate(lines):
+        marker = _LINE_MARKER.match(line)
+        if marker:
+            in_source = marker.group(2) == str(path)
+            source_line = int(marker.group(1))
+            lines[index] = ""
+            origins.append(0)
+            continue
+        origins.append(source_line if in_source else 0)
+        source_line += 1
+
     lex_ctx = VerificationContext.within(ctx, profile.lex_timeout)
     return tuple(
-        token for token in profile.lex_source(result.stdout, ctx=lex_ctx)
+        replace(token, line=origins[token.line - 1] if token.line <= len(origins) else 0)
+        for token in profile.lex_source("\n".join(lines), ctx=lex_ctx)
         if not token.is_comment
     )
 
@@ -195,11 +229,16 @@ def _check_program_preprocessing(model, rendered, profile, ctx, report):
         return True
     report.token_status = CheckStatus.FAIL
     report.first_diff = diff
-    location = diff.actual or diff.expected
+    # Point at the user's own source; preprocessed columns are not meaningful.
+    expected = diff.expected
+    line = expected.line if expected is not None and expected.line > 0 else None
+    found = diff.actual.spelling if diff.actual is not None else "end of program"
+    wanted = expected.spelling if expected is not None else "end of program"
     report.diagnostics.append(Diagnostic(
         ErrorCode.TOKEN_MISMATCH, "token",
-        "Moving unsupported sections changed the preprocessor output",
-        location.line, location.column,
+        "Moving the preprocessing lines to the top changed macro expansion: "
+        f"expected {wanted!r} but found {found!r} after the move",
+        line, None,
         {"index": diff.index, "reason": diff.reason},
     ))
     return False

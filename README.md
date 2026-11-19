@@ -121,9 +121,11 @@ final translation unit, linking it when it defines `main`. User code is not
 executed, so behavior is `NOT_RUN (NO_FIXTURE)`. If moving directives changes
 macro expansion, token verification fails instead of marking the output valid.
 Relative local header files are not currently resolved in whole-program mode.
-This also requires directives to be safely movable. For example, a conditional
-block inside a function may fail verification if moving it to the prefix changes
-its scope.
+Directives must be safely movable. A conditional block (`#if`/`#ifdef`) that
+contains code is only accepted before the first declaration; one inside a
+function body or after earlier code is rejected at its `#if` line, as is an
+`#undef` after code. Programs may use `assert`, `__LINE__` and the date and
+time macros; line numbers they report refer to the generated program.
 
 The sample choices are `max2`, `min2`, `clamp`, `absdiff`, `gcd` and
 `sum_to_n`. Each includes eight fixed behavior inputs. Ordinary source and

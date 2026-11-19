@@ -35,12 +35,18 @@ analysis also accepts directives, multiple definitions, global declarations
 and cross-function references. It moves directives and complete conditional
 regions into the prefix, then the pipeline compares preprocessed token streams
 before compiling the final program. Line splicing is accepted inside a
-preserved directive and rejected in arranged source. A `#pragma` or `#line`
-after ordinary code is rejected because moving it could change compiler state.
-The file must compile with available headers and dependencies. Conditional
-groups embedded in functions and macros that depend on directive placement
-can fail when moved to the prefix. Preprocessed token comparison and the final
-build catch changes to expansion or compilation.
+preserved directive and rejected in arranged source. A `#pragma`, `#line` or
+`#undef` after ordinary code is rejected because moving it could change
+compiler state or macro scope. A conditional group (`#if`, `#ifdef`,
+`#ifndef`) that contains code is only moved when no code comes before it;
+later ones, including groups inside a function body, are rejected at the
+`#if` line. Moving such code would only be checked for the default macro
+configuration and could break a build with other `-D` options. Conditional
+groups that contain only directives may appear anywhere.
+The file must compile with available headers and dependencies. Macros that
+depend on directive placement can still change when moved to the prefix.
+Preprocessed token comparison and the final build catch changes to expansion
+or compilation.
 
 Complete-program input accepts printable UTF-8 text, including Chinese
 identifiers and string literals. Fullwidth and wide characters occupy two

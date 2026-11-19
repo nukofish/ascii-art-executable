@@ -95,14 +95,18 @@ def _program_preamble(text):
     ranges = []
     conditional_start = None
     conditional_depth = 0
+    conditional_has_code = False
     code_seen = False
     index = 0
 
     while index < len(lines):
         match = _DIRECTIVE_START.match(masked_lines[index])
         if match is None:
-            if conditional_depth == 0 and masked_lines[index].strip():
-                code_seen = True
+            if masked_lines[index].strip():
+                if conditional_depth:
+                    conditional_has_code = True
+                else:
+                    code_seen = True
             index += 1
             continue
         end = index + 1
@@ -110,21 +114,32 @@ def _program_preamble(text):
             end += 1
 
         directive = match.group(1).lower()
-        if conditional_depth == 0 and code_seen and directive in ("pragma", "line"):
+        if conditional_depth == 0 and code_seen and directive in ("pragma", "line", "undef"):
             raise _unsupported(
-                f"#{directive} after program code cannot be moved safely",
+                f"#{directive} after program code cannot be moved safely; "
+                "move it before the first declaration",
                 index + 1, 1,
             )
         if directive in ("if", "ifdef", "ifndef"):
             if conditional_depth == 0:
                 conditional_start = index
+                conditional_has_code = False
             conditional_depth += 1
         elif directive == "endif" and conditional_depth:
             conditional_depth -= 1
             if conditional_depth == 0:
+                if conditional_has_code and code_seen:
+                    # Moving guarded code ahead of earlier code is only checked
+                    # for the default macros and can break other configurations.
+                    raise _unsupported(
+                        "A conditional block containing code after program code "
+                        "cannot be moved safely; move the #if block before the "
+                        "first declaration or remove the condition",
+                        conditional_start + 1, 1,
+                    )
                 ranges.append((conditional_start, end))
                 conditional_start = None
-                code_seen = True
+                code_seen = code_seen or conditional_has_code
         elif conditional_depth == 0:
             ranges.append((index, end))
         index = end
