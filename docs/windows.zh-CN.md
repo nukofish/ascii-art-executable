@@ -77,6 +77,9 @@ python -m scripts.check_whole_program_samples --output-dir "$env:TEMP\codeart-sa
 node --check codeart/web/app.js
 ```
 
+`scripts.run_verification` 不接受已经存在的 `--output-dir`（报
+`[WinError 183]`），再次运行前请删除该目录或换一个新目录。
+
 本机的结果：pytest 全部通过，跳过 5 项（4 项需要创建符号链接的权限，见下文；
 1 项需要 POSIX 进程组）；固定验收输出 `PASS fixed matrix (144/144 comparisons)`
 和 `Scaled cat: 1x PASS, 2x PASS, 4x PASS`；整程序样例输出
@@ -113,8 +116,9 @@ $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 cmd /c "`"$vs\Common7\Tools\VsDevCmd.bat`" -arch=x64 -no_logo && cl /nologo /std:c11 /utf-8 task_manager_cat.c /Fe:task_manager_cat_cl.exe"
 ```
 
-MSVC 会对 `strncpy` 和 `sscanf` 报 C4996 警告，它们来自输入程序本身，不影响
-结果。两个可执行文件对样例输入的输出都与期望完全一致。
+两个编译器都会提示 `strncpy` 和 `sscanf` 已弃用（Clang 的
+`-Wdeprecated-declarations`，MSVC 的 C4996）。这是 Microsoft C 运行库的标记，
+调用来自输入程序本身，不影响结果。两个可执行文件对样例输入的输出都与期望完全一致。
 
 程序输出 UTF-8，所以中文要在代码页 65001 的控制台里才能正常显示。用 `chcp`
 查看，用 `chcp 65001` 切换；测试机器的控制台本来就是 65001。

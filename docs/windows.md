@@ -79,6 +79,9 @@ python -m scripts.check_whole_program_samples --output-dir "$env:TEMP\codeart-sa
 node --check codeart/web/app.js
 ```
 
+`scripts.run_verification` refuses an `--output-dir` that already exists
+(`[WinError 183]`); remove it or pick a new one before running it again.
+
 Expected results on this machine: pytest passes with 5 skipped tests (4 need
 symlink rights, see below, and 1 needs POSIX process groups), the fixed matrix
 reports `PASS fixed matrix (144/144 comparisons)` and
@@ -116,8 +119,9 @@ $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
 cmd /c "`"$vs\Common7\Tools\VsDevCmd.bat`" -arch=x64 -no_logo && cl /nologo /std:c11 /utf-8 task_manager_cat.c /Fe:task_manager_cat_cl.exe"
 ```
 
-MSVC prints C4996 warnings for `strncpy` and `sscanf`. They come from the input
-program and do not affect the result. Both executables produced exactly the
+Both compilers warn that `strncpy` and `sscanf` are deprecated (Clang's
+`-Wdeprecated-declarations`, MSVC's C4996). The Microsoft C runtime marks them
+this way; the calls come from the input program and the result is unaffected. Both executables produced exactly the
 expected output for the sample input.
 
 The programs print UTF-8, so Chinese text needs a console in code page 65001.
