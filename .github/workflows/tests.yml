@@ -75,6 +75,54 @@ jobs:
         run: python scripts/check_test_count.py
       - name: Test
         run: python -m pytest -q
+  full-windows:
+    name: Full checks (windows, clang + node)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: Record compiler
+        run: |
+          Get-Command clang | Format-List Source
+          clang --version
+      - name: Install pinned dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Require the libclang native library
+        run: python -c "import clang.cindex; print('libclang native library loaded')"
+      - name: Record environment
+        if: ${{ !cancelled() }}
+        run: python -m codeart.environment
+      - name: Check browser script
+        if: ${{ !cancelled() }}
+        run: node --check codeart/web/app.js
+      - name: Test
+        if: ${{ !cancelled() }}
+        run: python -m pytest -q
+      - name: Fixed acceptance matrix
+        if: ${{ !cancelled() }}
+        run: python -m scripts.run_verification --output-dir "$env:RUNNER_TEMP\fixed"
+      - name: Whole-program samples
+        if: ${{ !cancelled() }}
+        run: python -m scripts.check_whole_program_samples --output-dir "$env:RUNNER_TEMP\samples"
+      - name: Command-line tool with a Chinese program
+        if: ${{ !cancelled() }}
+        run: |
+          python -m codeart.cli --program docs\reports\whole_program\input\task_manager.c `
+            --shape cat --output "$env:RUNNER_TEMP\task_manager_cat.c"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m codeart.cli --program docs\reports\whole_program\input\task_manager.c --shape circle
   full-macos:
     name: Full checks (macOS, manual or macos-ci label)
     if: >-

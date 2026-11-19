@@ -118,6 +118,10 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
         raise CommandTimedOut(stdout.decode("utf-8", errors="replace"))
 
 
+# Windows linkers add .exe to an output name that has no extension.
+_PROGRAM_NAME = "program.exe" if os.name == "nt" else "program"
+
+
 class BuildFailed(Exception):
     def __init__(self, result: subprocess.CompletedProcess):
         self.result = result
@@ -173,7 +177,7 @@ class BuildSession:
         try:
             source_path = directory / "input.c"
             source_path.write_text(source + wrapper, encoding="utf-8", newline="")
-            artifact = directory / ("input.o" if mode == "object" else "program")
+            artifact = directory / ("input.o" if mode == "object" else _PROGRAM_NAME)
             args = [compiler.path, *compiler.flags]
             if mode == "object":
                 args.append("-c")

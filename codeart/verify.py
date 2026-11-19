@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from itertools import zip_longest
+import os
 import re
 from time import monotonic
 
@@ -200,7 +201,9 @@ def _preprocessed_tokens(source, profile, builds, compiler, ctx):
     for index, line in enumerate(lines):
         marker = _LINE_MARKER.match(line)
         if marker:
-            in_source = marker.group(2) == str(path)
+            # Clang escapes backslashes in marker paths, as in C:\\Users\\...
+            marker_path = re.sub(r"\\(.)", r"\1", marker.group(2))
+            in_source = os.path.normcase(marker_path) == os.path.normcase(str(path))
             source_line = int(marker.group(1))
             lines[index] = ""
             origins.append(0)
