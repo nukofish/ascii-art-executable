@@ -56,13 +56,24 @@ def check_context(ctx) -> None:
 
 
 def stop_process(proc: subprocess.Popen | None) -> None:
-    """Kill a child started in its own session. The caller reaps it."""
+    """Kill a child and its descendants. The caller reaps the child."""
     if proc is None or proc.pid is None:
         return
     try:
         if os.name == "posix":
             os.killpg(proc.pid, signal.SIGKILL)
         else:
+            # TerminateProcess stops only the child. A wrapper such as a .cmd
+            # compiler shim leaves descendants that keep our pipes open, so
+            # stop the whole tree while the child's pid is still reserved.
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL, timeout=10, check=False,
+                )
+            except (OSError, subprocess.TimeoutExpired):
+                pass
             proc.kill()
     except ProcessLookupError:
         pass

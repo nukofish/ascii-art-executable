@@ -3,6 +3,7 @@
 import subprocess
 import sys
 from threading import Event
+from time import monotonic
 from unittest.mock import MagicMock, Mock, call
 
 import pytest
@@ -90,3 +91,21 @@ def test_frozen_clock_stops_and_reaps_real_child(
         assert error.value.reason == "PIPELINE_TIMEOUT"
     assert len(children) == 1
     assert children[0].returncode not in (None, 0)
+
+
+def test_timeout_stops_descendants_that_hold_the_pipes(tmp_path):
+    # A compiler wrapper (a .cmd shim on Windows) starts its own child, which
+    # inherits stdout. Killing only the wrapper would leave communicate()
+    # waiting for the grandchild to exit.
+    script = (
+        "import subprocess, sys, time; "
+        "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+        "time.sleep(30)"
+    )
+    started = monotonic()
+    with pytest.raises(procutil.CommandTimedOut):
+        procutil.run_command(
+            [sys.executable, "-c", script], cwd=tmp_path, env=None,
+            ctx=RunContext(monotonic() + 60), timeout=1.0,
+        )
+    assert monotonic() - started < 10

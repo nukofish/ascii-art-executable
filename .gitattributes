@@ -1,2 +1,10 @@
+# Check out text as LF on every OS. Fixtures, expected outputs and stdin files
+# are compared byte for byte, and Git for Windows would otherwise convert them
+# to CRLF (core.autocrlf=true).
+* text=auto eol=lf
+
 # Generated source retains all canvas rows, including trailing empty rows.
 docs/reports/**/*.c whitespace=-blank-at-eof
+
+# Python's csv module writes CRLF; keep these archived reports byte-identical.
+*.csv -text

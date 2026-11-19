@@ -152,6 +152,34 @@ def _check_declarations(tu, clang, filename):
     return function
 
 
+# Lex requests from the layout's join checks arrive by the thousand. Reparsing
+# one translation unit per flag set skips the driver's toolchain discovery,
+# which dominates a fresh parse on Windows (MSVC lookup) and costs a third of
+# it on Linux.
+_LEX_UNITS = {}
+
+
+def _lex_unit(clang, filename, flags, text):
+    key = tuple(flags)
+    tu = _LEX_UNITS.get(key)
+    if tu is not None:
+        data = text.encode("utf-8")
+        unsaved = (clang._CXUnsavedFile * 1)()
+        unsaved[0].name = filename.encode("utf-8")
+        unsaved[0].contents = data
+        unsaved[0].length = len(data)
+        if clang.conf.lib.clang_reparseTranslationUnit(tu, 1, unsaved, 0) == 0:
+            return tu
+        # libclang leaves a unit that failed to reparse unusable.
+        del _LEX_UNITS[key]
+    tu = _index().parse(
+        filename, args=list(flags), unsaved_files=[(filename, text)],
+        options=clang.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD,
+    )
+    _LEX_UNITS[key] = tu
+    return tu
+
+
 def process(request):
     import clang.cindex as clang
 
@@ -161,12 +189,14 @@ def process(request):
     utf8 = parsing_text.encode("utf-8")
     utf8_lines = () if parsing_text.isascii() else utf8.split(b"\n")
     filename = "input.c"
-    index = _index()
-    tu = index.parse(
-        filename, args=request["flags"],
-        unsaved_files=[(filename, parsing_text)],
-        options=clang.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD,
-    )
+    if request["mode"] == "lex":
+        tu = _lex_unit(clang, filename, request["flags"], parsing_text)
+    else:
+        tu = _index().parse(
+            filename, args=request["flags"],
+            unsaved_files=[(filename, parsing_text)],
+            options=clang.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD,
+        )
     tokens = []
     for token in tu.get_tokens(extent=tu.cursor.extent):
         if request["mode"] == "program" and (

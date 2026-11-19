@@ -500,12 +500,19 @@ def test_bad_c_compilation_and_behavior_result(monkeypatch):
 
 
 def write_compiler(path):
-    path.write_text(f"#!{sys.executable}\n"
-                    "import sys, time\n"
-                    "if '--version' in sys.argv:\n"
-                    "    print('test compiler 1')\n"
-                    "else:\n"
-                    "    time.sleep(20)\n")
+    script = ("import sys, time\n"
+              "if '--version' in sys.argv:\n"
+              "    print('test compiler 1')\n"
+              "else:\n"
+              "    time.sleep(20)\n")
+    if os.name == "nt":
+        # Windows runs neither shebangs nor files without an executable suffix.
+        program = path.with_suffix(".py")
+        program.write_text(script, encoding="utf-8")
+        path = path.with_suffix(".cmd")
+        path.write_text(f'@"{sys.executable}" "{program}" %*\r\n', encoding="utf-8")
+        return str(path)
+    path.write_text(f"#!{sys.executable}\n" + script, encoding="utf-8")
     path.chmod(0o755)
     return str(path)
 

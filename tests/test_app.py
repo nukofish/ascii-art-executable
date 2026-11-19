@@ -57,7 +57,9 @@ def call(base, path, payload=None, origin=None):
 
 
 def wait_result(base, identifier):
-    deadline = monotonic() + 5
+    # Compiling and linking with the MSVC toolchain is slower than on Linux;
+    # the poll returns as soon as the job finishes.
+    deadline = monotonic() + 30
     while monotonic() < deadline:
         data, _ = call(base, "/api/jobs/" + identifier)
         job = json.loads(data)

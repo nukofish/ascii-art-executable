@@ -373,11 +373,17 @@ _join_worker = LexWorker()
 _JOIN_BOUNDARIES = frozenset("()[]{},;")
 
 
+# Trigraphs are part of ISO C, but Clang leaves them off for MSVC targets and
+# GNU modes. Join checks always enable them, so a run such as `??(` is never
+# formed even when the local compiler would read it as three tokens.
+_JOIN_FLAGS = ("-ftrigraphs",)
+
+
 @lru_cache(maxsize=4096)
 def _can_join_cached(expected, flags, timeout):
     text = "".join(spelling for kind, spelling in expected)
     reply = _check_reply(_join_worker.request(
-        {"mode": "lex", "text": text, "flags": list(flags)}, timeout,
+        {"mode": "lex", "text": text, "flags": [*flags, *_JOIN_FLAGS]}, timeout,
     ))
     return tuple((token["kind"], token["spelling"]) for token in reply["tokens"]) == expected
 

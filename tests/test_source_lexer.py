@@ -53,3 +53,55 @@ def test_hung_worker_is_reaped_and_next_request_recovers(monkeypatch):
         assert worker.request(payload("recovered"), 5)["tokens"][0]["spelling"] == "recovered"
     finally:
         worker.close()
+
+
+def test_lex_requests_reuse_one_unit_per_flag_set(monkeypatch):
+    pytest.importorskip("clang.cindex")
+    from codeart import _source_worker as worker
+
+    monkeypatch.setattr(worker, "_LEX_UNITS", {})
+    strict = ["-std=c11", "-pedantic-errors"]
+    texts = ["a + +b", "x->y", "数 = 1;", "??(", "a +++ b"]
+
+    def spellings(text, flags):
+        reply = worker.reply_for({"mode": "lex", "text": text, "flags": flags})
+        return [token["spelling"] for token in reply["tokens"]]
+
+    reused = [spellings(text, strict) for text in texts]
+    assert len(worker._LEX_UNITS) == 1
+    fresh = []
+    for text in texts:
+        monkeypatch.setattr(worker, "_LEX_UNITS", {})
+        fresh.append(spellings(text, strict))
+    assert reused == fresh
+    assert reused[0] == ["a", "+", "+", "b"]
+    assert reused[4] == ["a", "++", "+", "b"]
+
+    # A different flag set gets its own unit and its own lexing rules.
+    assert spellings("??(", strict + ["-ftrigraphs"]) == ["??("]
+    assert spellings("??(", strict) == ["??("]
+    assert len(worker._LEX_UNITS) == 2
+
+
+def test_lex_unit_that_fails_to_reparse_is_replaced(monkeypatch):
+    pytest.importorskip("clang.cindex")
+    import clang.cindex as clang
+    from codeart import _source_worker as worker
+
+    monkeypatch.setattr(worker, "_LEX_UNITS", {})
+    flags = ["-std=c11"]
+    first = worker._lex_unit(clang, "input.c", flags, "first\n")
+    real = clang.conf.lib
+
+    class FailingLib:
+        def __getattr__(self, name):
+            return getattr(real, name)
+
+        @staticmethod
+        def clang_reparseTranslationUnit(*args):
+            return 1
+
+    monkeypatch.setattr(clang.conf, "lib", FailingLib(), raising=False)
+    second = worker._lex_unit(clang, "input.c", flags, "second\n")
+    assert second is not first
+    assert worker._LEX_UNITS[tuple(flags)] is second

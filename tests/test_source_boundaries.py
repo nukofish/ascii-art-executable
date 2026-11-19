@@ -198,6 +198,22 @@ def test_can_join_checks_the_suffix_after_a_delimiter(pairs):
     assert source.can_join(run[:-1], run[-1], checked_run=True) is False
 
 
+@pytest.mark.parametrize("flags", [
+    ("-std=c11", "-pedantic-errors"),
+    ("-std=gnu11",),
+    ("-std=c11", "-fms-compatibility"),
+], ids=["c11", "gnu11", "msvc-compat"])
+@pytest.mark.parametrize("checked_run", [False, True])
+def test_can_join_never_forms_a_trigraph_when_the_compiler_disables_them(flags, checked_run):
+    # Clang for MSVC targets and GNU modes reads ??( as three tokens; a
+    # strict C11 compiler reads [. The generated code must suit both.
+    source._can_join_cached.cache_clear()
+    source._run_lexes_as.cache_clear()
+    run = tokens(("PUNCTUATION", "?"), ("PUNCTUATION", "?"), ("PUNCTUATION", "("))
+    profile = VerificationProfile(flags=flags)
+    assert source.can_join(run[:-1], run[-1], profile, checked_run=checked_run) is False
+
+
 # Short spellings that join into longer C tokens, plus the delimiters that the
 # incremental check treats as boundaries.
 _JOIN_POOL = (
