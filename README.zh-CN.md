@@ -32,6 +32,19 @@ python -m codeart.environment
 python -m pytest -q
 ```
 
+Windows 上的 Clang 使用 MSVC 的头文件和链接器，所以还需要安装含 C++ 桌面
+开发工作负载的 Visual Studio 或其生成工具。在 PowerShell 中的对应步骤、实测
+版本和常见问题见 [在 Windows 上运行](docs/windows.zh-CN.md)。
+
+```powershell
+py -3.11 -m venv .venv
+Set-ExecutionPolicy -Scope Process Bypass
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+python -m codeart.environment
+python -m pytest -q
+```
+
 `requirements.txt` 用于运行，固定 `libclang==18.1.1`，包含 Python
 绑定及原生库。开发依赖另外固定 pytest 9.2.0。请用
 `python -m pip`，确保安装与运行使用同一个解释器。
@@ -153,17 +166,20 @@ python -m scripts.run_verification --output-dir docs/reports/local-check/fixed
 当前 CI 采用 #27 已合并的配置：Ubuntu 使用 ubuntu-latest、Python 3.12、
 固定 clang-18 和 pip 提供的 libclang 18.1.1。全量任务检查依赖导入、记录环境、
 检查前端脚本语法和测试数量，再运行完整测试套件。
+Windows 全量任务在 windows-latest 上用 Python 3.12 和运行器自带的 Clang，
+以 PowerShell 运行完整测试、固定验收、整程序样例，以及用中文程序运行命令行
+工具。每一步在前面失败时也照常执行，一次运行就能看到全部 Windows 问题。
 正式验收需另行运行上面的 `scripts.run_verification` 命令；当前 CI 不自动
 生成或上传正式验收报告。已有验收证据请按报告中的 commit 核对。
 
-| 事件 | Ubuntu 快速检查 | Ubuntu 全量 | macOS 附加全量 |
-| --- | --- | --- | --- |
-| PR 创建、更新、重开（无标签） | 运行 | 运行 | 跳过 |
-| PR 仅有 macos-ci 标签 | 运行 | 运行 | 运行 |
-| 推送 main 或 v* 标签 | 运行 | 运行 | 跳过 |
-| Actions 手动运行 | 运行 | 运行 | 运行 |
+| 事件 | Ubuntu 快速检查 | Ubuntu 全量 | Windows 全量 | macOS 附加全量 |
+| --- | --- | --- | --- | --- |
+| PR 创建、更新、重开（无标签） | 运行 | 运行 | 运行 | 跳过 |
+| PR 仅有 macos-ci 标签 | 运行 | 运行 | 运行 | 运行 |
+| 推送 main 或 v* 标签 | 运行 | 运行 | 运行 | 跳过 |
+| Actions 手动运行 | 运行 | 运行 | 运行 | 运行 |
 
-每个 PR 都运行两个 Ubuntu 任务。需要 Apple Clang 验证时，添加 `macos-ci`
+每个 PR 都运行两个 Ubuntu 任务和 Windows 任务。需要 Apple Clang 验证时，添加 `macos-ci`
 标签；也可以在 Actions 中手动运行 Python tests，一次运行两个平台。macOS
 运行器容量不足可能延迟附加检查。
 同一 PR 的新事件会取消旧运行。PR 应写明实际命令、测试结果和环境版本。

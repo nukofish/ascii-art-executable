@@ -28,12 +28,27 @@ python -m codeart.environment
 python -m pytest -q
 ```
 
+On Windows, Clang uses the MSVC headers and linker, so Visual Studio or its
+Build Tools with the C++ desktop workload is also required. The same steps in
+PowerShell, with tested versions and common problems, are in
+[Running on Windows](docs/windows.md).
+
+```powershell
+py -3.11 -m venv .venv
+Set-ExecutionPolicy -Scope Process Bypass
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements-dev.txt
+python -m codeart.environment
+python -m pytest -q
+```
+
 Production use only needs `requirements.txt`. Development dependencies add
 pytest. Record the output of `python -m codeart.environment` with any bug
 report. CI runs the pure-Python tests in a fast `unit` job on ubuntu-latest on
 every trigger, and everything else in a `full` job that also runs on
 ubuntu-latest with Python 3.12, Clang 18, libclang 18.1.1 and pytest 9.2.0. The
-`full` job runs on pushes to main, on `v*` tags and on every pull request;
+`full` job runs on pushes to main, on `v*` tags and on every pull request.
+A `full-windows` job runs on the same events on windows-latest;
 macOS is covered by a separate `full-macos` job that only runs on manual
 dispatch or on a `macos-ci` label. See
 [continuous integration](#continuous-integration). Local
@@ -199,14 +214,19 @@ Web and CLI reports include that revision information.
 
 ### Continuous integration
 
-GitHub Actions runs three jobs. `Fast pure-Python checks (ubuntu)` uses
+GitHub Actions runs four jobs. `Fast pure-Python checks (ubuntu)` uses
 ubuntu-latest with a five minute timeout and runs the pure-Python test files
 without libclang. `Full checks (ubuntu, clang + node)` is the baseline full
 suite: it uses ubuntu-latest with a fifteen minute timeout, installs `clang-18`
 plus `requirements-dev.txt`, logs the compiler version and the environment
 report, checks the browser script with `node --check`, rejects a decrease in
 the collected test count relative to the base revision and runs the whole
-suite. `Full checks (macOS, manual or macos-ci label)` repeats the same steps on
+suite. `Full checks (windows, clang + node)` runs on windows-latest with
+Python 3.12, the runner's Clang and a twenty-five minute timeout, in PowerShell.
+It runs the whole suite, the fixed acceptance matrix, the whole-program samples
+and the command-line tool on a Chinese program; each step runs even when an
+earlier one failed, so one run shows every Windows problem.
+`Full checks (macOS, manual or macos-ci label)` repeats the same steps on
 macos-15, with a thirty minute timeout, for the cases where Apple Clang matters.
 
 macOS hosted capacity is the scarce resource: runners were frequently
@@ -215,15 +235,15 @@ which turned the trunk red although nothing was wrong with the code. The trunk
 therefore runs the baseline full suite on ubuntu, and macOS is no longer part of
 the default signal.
 
-| Event | ubuntu fast checks | ubuntu full checks | macOS full checks |
-| --- | --- | --- | --- |
-| Pull request opened, updated or reopened | yes | yes | skipped |
-| Pull request labelled `macos-ci` | yes | yes | yes |
-| Push to `main` | yes | yes | skipped |
-| Push of a `v*` tag | yes | yes | skipped |
-| Manual `Run workflow` | yes | yes | yes |
+| Event | ubuntu fast checks | ubuntu full checks | Windows full checks | macOS full checks |
+| --- | --- | --- | --- | --- |
+| Pull request opened, updated or reopened | yes | yes | yes | skipped |
+| Pull request labelled `macos-ci` | yes | yes | yes | yes |
+| Push to `main` | yes | yes | yes | skipped |
+| Push of a `v*` tag | yes | yes | yes | skipped |
+| Manual `Run workflow` | yes | yes | yes | yes |
 
-Every pull request runs both Ubuntu jobs. Add the `macos-ci` label to also run
+Every pull request runs both Ubuntu jobs and the Windows job. Add the `macos-ci` label to also run
 the full suite on macOS; removing that label cancels the pending macOS job and
 adding it back queues a fresh run. Recent runs of the same ref are cancelled
 when a newer run starts. To run everything by hand, open the **Actions** tab, select the
@@ -254,7 +274,8 @@ entry is inspiration only; no code, math, or rendering path is reused.
 ## Clang and libclang troubleshooting
 
 **Compiler not found.** The Clang command-line compiler and the Python
-libclang package are separate dependencies. On macOS, install Apple's tools
+libclang package are separate dependencies. For Windows, see
+[Running on Windows](docs/windows.md#common-problems). On macOS, install Apple's tools
 with `xcode-select --install`, then check `clang --version`. On Ubuntu 24.04,
 run `sudo apt-get update && sudo apt-get install -y clang-18`, then
 `export PATH="/usr/lib/llvm-18/bin:$PATH"`.
