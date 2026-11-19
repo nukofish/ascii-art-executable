@@ -69,14 +69,18 @@ def _skip(report, stage, code, message):
     report.diagnostics.append(Diagnostic(code, stage, message))
 
 
-def _first_diff(expected, actual, ctx):
+def _token_key(token):
+    return token.kind, token.spelling
+
+
+def _first_diff(expected, actual, ctx, key=_token_key):
     for index, (left, right) in enumerate(zip_longest(expected, actual)):
         check_context(ctx)
         if left is None:
             reason = "EXTRA_TOKEN"
         elif right is None:
             reason = "MISSING_TOKEN"
-        elif (left.kind, left.spelling) == (right.kind, right.spelling):
+        elif key(left) == key(right):
             continue
         else:
             reason = "KIND_OR_SPELLING"
@@ -155,6 +159,22 @@ _PREPROCESS_FLAGS = (
     "-E", "-D__LINE__=0", "-D__DATE__=0", "-D__TIME__=0", "-D__TIMESTAMP__=0",
     "-Wno-builtin-macro-redefined",
 )
+_STRING_LITERAL = re.compile(r'(?:u8|[uUL])?"')
+
+
+def _expanded_token_key(token):
+    """Compare string literals without whitespace.
+
+    Stringizing (`#x`, as in `assert`) copies the spacing between the argument
+    tokens, which layout necessarily changes. The artwork tokens themselves are
+    compared exactly first, so a whitespace-only difference in an expanded
+    string can only come from that spacing.
+    """
+    if _STRING_LITERAL.match(token.spelling) and token.spelling.endswith('"'):
+        return token.kind, "".join(token.spelling.split())
+    return token.kind, token.spelling
+
+
 _LINE_MARKER = re.compile(r'^# (\d+) "((?:[^"\\]|\\.)*)"')
 
 
@@ -224,7 +244,7 @@ def _check_program_preprocessing(model, rendered, profile, ctx, report):
         raise StageError(Diagnostic(
             ErrorCode.DEPENDENCY_UNAVAILABLE, "token", str(exc),
         )) from exc
-    diff = _first_diff(original, generated, ctx)
+    diff = _first_diff(original, generated, ctx, _expanded_token_key)
     if diff is None:
         return True
     report.token_status = CheckStatus.FAIL

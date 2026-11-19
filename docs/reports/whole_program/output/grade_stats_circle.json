@@ -1,0 +1,158 @@
+{
+  "verified": true,
+  "status": "OK",
+  "checks": {
+    "token": {
+      "status": "PASS",
+      "reason": null
+    },
+    "geometry": {
+      "status": "PASS",
+      "reason": null
+    },
+    "compile": {
+      "status": "PASS",
+      "reason": null
+    },
+    "behavior": {
+      "status": "NOT_RUN",
+      "reason": "NO_FIXTURE"
+    }
+  },
+  "diagnostics": [],
+  "attempt_history": [
+    {
+      "scale": 1.03125,
+      "width": 66,
+      "height": 33,
+      "failure_token_index": null,
+      "reason": null,
+      "elapsed_s": 0.4881787560000248
+    },
+    {
+      "scale": 1.0,
+      "width": 64,
+      "height": 32,
+      "failure_token_index": 465,
+      "reason": "no remaining span can hold the token",
+      "elapsed_s": 0.07295079599998644
+    }
+  ],
+  "layout": {
+    "width": 66,
+    "height": 33,
+    "scale": 1.03125,
+    "attempts": 2
+  },
+  "font_id": "Roboto Mono Regular",
+  "cell_aspect": 0.5,
+  "code_fill_ratio": 0.8162193698949824,
+  "code_fill_warning": null,
+  "coverage": {
+    "total": 0.9235705950991832,
+    "token": 0.8162193698949824,
+    "comment": 0.1073512252042007,
+    "comment_cells": {
+      "block": 70,
+      "line": 114
+    }
+  },
+  "source_text": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#define MAX_STUDENTS 64\n#define SUBJECTS 3\n\n\n                         struct student{\n                   char name[32];int scores[ //\n                SUBJECTS];int total;};static //:o+\n             const char* /*-*/ const subject_names[\n          SUBJECTS]={ \"\u8bed\u6587\",\"\u6570\u5b66\",\"\u82f1\u8bed\"};static int\n        by_total_desc (const void*left, /*x*/ const void*\n       right){const struct student*a=left;const struct //+-\n     student*b=right;if( /*=*/ a-> total!=b->total){return b\n    ->total-a->total;}return strcmp (a /*+*/ ->name,b->name);}\n   static int read_students(struct student *students,int //-x=(\n  capacity){int count /*o*/ =0;while(count<capacity){ struct //:\n  student*s=&students[count];if( /*=*/ scanf(\"%31s %d %d %d\",s->\n name,&s->scores[0],&s->scores[1], /*:*/ &s->scores[2])!=4){ //()\n break;}s-> total=0;for( /*-*/ int i=0;i<SUBJECTS;i++){s->total+=\ns->scores[i]; /*=*/ } count++;}return count;}static char band(int\nscore){return score >=90?'A' /*-*/ :score>=80?'B':score>=70?'C':\nscore>=60?'D':'F';}int main( void){static struct student students\n[MAX_STUDENTS];int count= read_students(students,MAX_STUDENTS);if(\ncount==0){puts(\"\u6ca1\u6709\u6570\u636e\") ;return 1;}qsort(students,(size_t)count\n ,sizeof students[0], by_total_desc);puts(\"\u6392\u540d \u59d3\u540d \u603b\u5206 \u7b49\u7ea7\"\n ) /*+*/ ;for(int i=0;i<count;i++ ){printf(\"%2d %-8s %3d %c\\n\" //\n  ,i+1,students[i].name,students[i]. total,band(students[i] //+-\n  .total/SUBJECTS));}for(int j=0;j<SUBJECTS; j++){int sum=0,best\n   =0,bands[5]={0};for(int i=0;i<count;i++){ int score=students\n    [i].scores[j];sum+=score;best=score>best? /*)*/ score:best\n     ;bands[strchr(\"ABCDF\",band(score))-\"ABCDF\"]++;} printf(\n       \"%s \u5e73\u5747 %d.%02d \u6700\u9ad8 %d \u5206\u6bb5 A%d B%d C%d D%d F%d\\n\"\n        , //:o+-x=()&.:o+-x=()&.:o+-x=()&.:o+-x=()&.:o+-x=\n          subject_names //)&.:o+-x=()&.:o+-x=()&.:o+-x=(\n             [j /*+*/ ],sum/count,sum*100/count% //=(\n                100,best, bands[0],bands[ /*o*/ 1]\n                   ,bands[2],bands[3],bands[4\n                         ]);} return 0;}\n",
+  "program_mode": true,
+  "preamble_text": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#define MAX_STUDENTS 64\n#define SUBJECTS 3\n\n\n",
+  "artwork_character_widths": {
+    "\u7b49": 2,
+    "\u636e": 2,
+    "\u6709": 2,
+    "\u7ea7": 2,
+    "\u5b66": 2,
+    "\u6bb5": 2,
+    "\u6ca1": 2,
+    "\u6392": 2,
+    "\u5747": 2,
+    "\u9ad8": 2,
+    "\u8bed": 2,
+    "\u82f1": 2,
+    "\u6700": 2,
+    "\u540d": 2,
+    "\u603b": 2,
+    "\u5206": 2,
+    "\u5e73": 2,
+    "\u59d3": 2,
+    "\u6587": 2,
+    "\u6570": 2
+  },
+  "verification": {
+    "token_status": "PASS",
+    "geometry_status": "PASS",
+    "compile_status": "PASS",
+    "behavior_status": "NOT_RUN",
+    "geometry_metrics": {
+      "kind": "circle",
+      "cols": 66,
+      "rows": 33,
+      "cell_aspect": 0.5,
+      "bbox": {
+        "cols": 66,
+        "rows": 33,
+        "ratio": 1.0
+      },
+      "allowed_cells": 1714,
+      "spans_total": 33,
+      "rows_with_multiple_spans": 0,
+      "eye_cells": {
+        "left": 0,
+        "right": 0
+      },
+      "nose_cells": 0,
+      "ear_gap_rows": 0,
+      "boundary_cells": {},
+      "holes": [],
+      "code_stroke_cells": 0,
+      "outside_canvas_cells": 0,
+      "outside_mask_cells": 0,
+      "out_of_bounds_cells": 0,
+      "hole_leakage_cells": 0,
+      "coverage": 0.9235705950991832,
+      "token_coverage": 0.8162193698949824,
+      "comment_coverage": 0.1073512252042007,
+      "comment_cells": {
+        "block": 70,
+        "line": 114
+      },
+      "ear_coverage": {}
+    },
+    "first_diff": null,
+    "diagnostics": [],
+    "skip_reasons": {
+      "behavior": "NO_FIXTURE"
+    },
+    "durations": {
+      "token": 0.3540092719999848,
+      "geometry": 0.002029644999993252,
+      "compile": 0.08336386600001333
+    },
+    "compiler": {
+      "path": "/usr/bin/clang",
+      "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin",
+      "flags": [
+        "-std=c11",
+        "-pedantic-errors",
+        "-Wno-strict-prototypes",
+        "-resource-dir",
+        "/usr/lib/llvm-18/lib/clang/18"
+      ],
+      "_fingerprint": [
+        65024,
+        220829,
+        140592,
+        1716798380000000000
+      ]
+    },
+    "behavior_cases_compared": 0
+  },
+  "revision": {
+    "commit": "44c48e7d6e6c5c0da227e377774349761697be73",
+    "dirty": false
+  }
+}

@@ -1,0 +1,214 @@
+{
+  "verified": true,
+  "status": "OK",
+  "checks": {
+    "token": {
+      "status": "PASS",
+      "reason": null
+    },
+    "geometry": {
+      "status": "PASS",
+      "reason": null
+    },
+    "compile": {
+      "status": "PASS",
+      "reason": null
+    },
+    "behavior": {
+      "status": "NOT_RUN",
+      "reason": "NO_FIXTURE"
+    }
+  },
+  "diagnostics": [],
+  "attempt_history": [
+    {
+      "scale": 1.0,
+      "width": 178,
+      "height": 32,
+      "failure_token_index": null,
+      "reason": null,
+      "elapsed_s": 0.461845650999976
+    }
+  ],
+  "layout": {
+    "width": 178,
+    "height": 32,
+    "scale": 1.0,
+    "attempts": 1
+  },
+  "font_id": "Roboto Mono Regular",
+  "cell_aspect": 0.5,
+  "code_fill_ratio": 0.28935965334617236,
+  "code_fill_warning": null,
+  "coverage": {
+    "total": 0.7900818488204141,
+    "token": 0.28935965334617236,
+    "comment": 0.5007221954742417,
+    "comment_cells": {
+      "block": 1881,
+      "line": 199
+    }
+  },
+  "source_text": "#include <ctype.h>\n#include <stdio.h>\n#include <string.h>\n#define MAX_WORDS 512\n#define MAX_LEN 24\n#define TOP 5\n\n\nstruct /*(*/ entry /*&*/ { /*(*/ char /*)*/ word /*&*/ [ /*(*/ MAX_LEN /*:*/ ] /*&*/ ; /*(*/ unsigned /*o*/ count /*-*/ ; /*o*/ } /*.*/ ; /*)*/ static //:o+-x=()&.:o+-x=()&.:o+-x\nstruct /*.*/ entry /*o*/ table /*-*/ [ /*o*/ MAX_WORDS /*)*/ ] /*=*/ ; /*-*/ static /*(*/ size_t /*.*/ used /*:*/ ; /*&*/ static //o+-x=()&.:o+-x=()&.:o+-x=()&.:o+-x=()&.:o+-x=()\nvoid /*:*/ add_word /*=*/ ( /*-*/ const /*=*/ char /*(*/ * /*x*/ word /*=*/ ) /*-*/ { /*o*/ for /*o*/ ( /*.*/ size_t /*+*/ i /*:*/ = /*&*/ 0 /*(*/ ; /*x*/ i< /*-*/ used /*x*/ ;i\n++) /*+*/ { /*:*/ if /*.*/ ( /*)*/ strcmp( /*o*/ table /*-*/ [ /*o*/ i /*.*/ ] /*)*/ .word /*.*/ , /*)*/ word /*&*/ ) /*(*/ ==0 /*(*/ ) /*x*/ { /*+*/ table /*x*/ [i /*-*/ ].count\n++ /*x*/ ;                          return /*x*/ ;} /*-*/                     } /*o*/ if(                                used /*)*/ <                                      //+-x=(\nMAX_WORDS /**/                      /*:o+-x=(*/ ) /*x*/ {                     strcpy /*.:o+*/                                (table                                        //=()&.\n[ /*.*/ used                        /*-x*/ ] /*+*/ .word                      /*=(*/ ,word                               /*&.:o*/ );                                         table\n[ /*+*/       /*x=(*/ used /*)&.:o*/       ++ /**/       ] /*.*/ . /*)*/ count          =1            ; /*x*/ } /*+*/ }         static        /**/ int /*o*/ before //x=()&.:o+-x=\n( /*=*/       const /*-*/ struct           /*()&*/       /**/ entry /*o+-x=(*/         *a            , /*(*/ const /*&.*/       struct        /*=()&.:o+-*/ entry /*=*/ * /*-*/ b\n){ /**/         return /*.:o+-x=()*/        a->              count /*-x=()&.*/       !=b /**/          ->count /*)&.:o+*/       /*x*/ ?         a /*+*/ -> /*o*/ count> /*x*/ b //\n-> /**/       count /*.*/ : /*)&.:*/       strcmp        /*()&.:o+-*/ (a /*+*/       -> /*)*/       word /*x*/ ,b-> /*=*/       /*)&.*/       word /*(*/ ) /*x*/ <0 /*-*/ ;}static\nvoid          /*()&.:o+-x=()&.:*/ sort /*o*/ (            struct /*)&.:o+-x=*/        entry         /*+-x=(*/ *items /**/       /*:o+*/          , /*.*/ long /*:*/ low /*:*/ , //\nlong              high /*&*/ ) /*(*/ { /*x*/ if(         low /*(*/ >=high /**/       /*:o+-*/        ) /*&*/ {return /**/       /*-x=*/        ; /*:*/ } /*&*/ struct /*o*/ entry\npivot         /*+-x=()&.:o+-x=(*/ =items /*.:o+-*/       /**/ [ /*+*/ (low            +high         /*&.:o+*/ ) /*:*/ /2]          ;          long /*=*/ i /*-*/ = /*o*/ low,j //-\n= /*-*/       high /*:*/ ; /*&*/ while /*:*/ (           i /*:*/ <= /*.*/ j){        while          /*o+-x*/ (before /**/       /*.:o*/                             /**/ ( /*+*/ &\nitems         /*&.:*/ [ /*&*/ i /*(*/ ] /*x*/ ,&         pivot /*)*/ ) /*=*/ )       i++;           while /*:*/ ( /*&.:*/       before                              /*&.:o+-*/ (\n& /*.*/       pivot /*)*/ , /*=*/ & /*-*/ items             [ /*.*/ j /*)*/ ])       )j--            ; /*:*/ if /*.*/ (i        <=j                                  ) /*x*/ { //+\nstruct        /*x=*/ entry /*)*/ swap /*&.:o+-x=*/         = /*o*/ items /*-*/         [i            ] /*-*/ ;items /*(*/           [                               i++ /*&*/ ] //\n= /*=*/       items /*-*/ [ /*o*/ j] /*:*/ ;items        /*:o+-*/ [ /*o*/ j--          ] =           swap /*.*/ ;} /*&.*/       } /*-*/       sort /*:*/ ( /*&*/ items /*:*/ , //&\nlow             , /*x*/ j /*+*/ ) /*:*/ ;sort(           items /*.*/ , /*)*/ i       ,high          /*()&.*/ ) /*)*/ ; }        int             main /*=*/ ( /*-*/ void /*x*/ ) //\n{ /*o*/       char /*&*/ word /*.*/ [MAX_LEN /*x*/       /*()&.:o+-x=(*/ ];            size_t       /*.:o+-x=()&*/ length       /*)&.*/       /*o+*/ = /*:*/ 0 /*&*/ ;int /*.*/ c;\n/*+-x*/       unsigned /*=()&.:o+-*/       long              total /*.:o+-x=*/       =0; /**/          while /*o*/ ( /**/         (c            = /*&*/ getchar /*+*/ ( /*:*/ ) //\n)!=               EOF /*)*/ ){ /*(*/       if(              isalpha /*-x=()&*/       /*:*/ (         c ) /*:*/ || /*.*/ c       == /**/       '\\'' /*+*/ ) /*:*/ { /*&*/ if(length\n+ /*:*/       /*+-x=(*/ 1 /*x*/ <          sizeof        /*=()*/ word /*&.:o*/        ){ /**/       word /*-*/ [ /*o+-x*/       length        /*:o+-x*/ ++] /*x*/ = /*+*/ (char //\n) /*-*/        tolower /*x=()&.:o+*/          (          c /*:*/ ) /*&*/ ;}}         else             if /*(*/ (length          /*.:o*/       /**/ >0 /*o*/ ) /*.*/ { /*)*/ word[\nlength /*o+-*/                      /*:o*/ ] /*.*/ ='\\0'                      /*+*/ ; /*:o+*/                            add_word /*x*/                                    //=()&.\n( /*.*/ word                            ) /*.*/ ;total                        /*=()*/ ++;                                   length /**/                                    //&.:o+\n= /*+*/ 0;}                           } /*:*/ if /*.*/ (                      length /*=()&*/                             > /*x*/ 0){                                       word\n[ /*=*/ length /*&*/ ] /*(*/ = /*x*/ '\\0' /*=*/ ; /*-*/ add_word /*&*/ ( /*(*/ word /*)*/ ) /*=*/ ; /*-*/ total /*=*/ ++ /*x*/ ; /*+*/ } /*:*/ sort( /*+*/ table /*x*/ , /*+*/ 0\n,( /*.*/ long /*:*/ ) /*&*/ used /*.*/ - /*)*/ 1) /*(*/ ; /*x*/ printf /*)*/ ( /*=*/ \"%lu words, %zu distinct\\n\" /*.*/ , //)&.:o+-x=()&.:o+-x=()&.:o+-x=()&.:o+-x=()&.:o+-x=()&.:o\ntotal /*=*/ , /*-*/ used /*x*/ ); /*-*/ for /*-*/ ( /*o*/ size_t /*x*/ i /*+*/ =0 /*o*/ ; /*.*/ i /*)*/ < /*=*/ used&& /*&*/ i /*(*/ < /*x*/ TOP /*x*/ ; /*+*/ i++ /*+*/ ) /*:*/ {\nprintf /*.*/ ( \"%-12s %u\\n\" /*:*/ , /*&*/ table /*:*/ [ /*&*/ i] /*)*/ . /*=*/ word /*(*/ , /*x*/ table /*(*/ [i /*=*/ ] /*-*/ . /*o*/ count /*-*/ ); /*+*/ } /*:*/ return 0;} //)\n",
+  "program_mode": true,
+  "preamble_text": "#include <ctype.h>\n#include <stdio.h>\n#include <string.h>\n#define MAX_WORDS 512\n#define MAX_LEN 24\n#define TOP 5\n\n\n",
+  "artwork_character_widths": {},
+  "verification": {
+    "token_status": "PASS",
+    "geometry_status": "PASS",
+    "compile_status": "PASS",
+    "behavior_status": "NOT_RUN",
+    "geometry_metrics": {
+      "kind": "code",
+      "cols": 178,
+      "rows": 32,
+      "cell_aspect": 0.5,
+      "bbox": {
+        "cols": 178,
+        "rows": 32,
+        "ratio": 2.78125
+      },
+      "allowed_cells": 4154,
+      "spans_total": 172,
+      "rows_with_multiple_spans": 24,
+      "eye_cells": {
+        "left": 0,
+        "right": 0
+      },
+      "nose_cells": 0,
+      "ear_gap_rows": 0,
+      "boundary_cells": {},
+      "holes": [
+        {
+          "cells": 66,
+          "centroid": {
+            "row": 5.0,
+            "col": 24.5
+          }
+        },
+        {
+          "cells": 63,
+          "centroid": {
+            "row": 5.0,
+            "col": 67.0
+          }
+        },
+        {
+          "cells": 294,
+          "centroid": {
+            "row": 15.5,
+            "col": 102.0
+          }
+        },
+        {
+          "cells": 430,
+          "centroid": {
+            "row": 15.5,
+            "col": 148.25116279069766
+          }
+        },
+        {
+          "cells": 126,
+          "centroid": {
+            "row": 15.5,
+            "col": 10.0
+          }
+        },
+        {
+          "cells": 28,
+          "centroid": {
+            "row": 8.5,
+            "col": 39.0
+          }
+        },
+        {
+          "cells": 126,
+          "centroid": {
+            "row": 15.5,
+            "col": 53.0
+          }
+        },
+        {
+          "cells": 126,
+          "centroid": {
+            "row": 15.5,
+            "col": 81.0
+          }
+        },
+        {
+          "cells": 126,
+          "centroid": {
+            "row": 15.5,
+            "col": 124.0
+          }
+        },
+        {
+          "cells": 28,
+          "centroid": {
+            "row": 22.5,
+            "col": 39.0
+          }
+        },
+        {
+          "cells": 66,
+          "centroid": {
+            "row": 26.0,
+            "col": 24.5
+          }
+        },
+        {
+          "cells": 63,
+          "centroid": {
+            "row": 26.0,
+            "col": 67.0
+          }
+        }
+      ],
+      "code_stroke_cells": 1542,
+      "outside_canvas_cells": 0,
+      "outside_mask_cells": 0,
+      "out_of_bounds_cells": 0,
+      "hole_leakage_cells": 0,
+      "coverage": 0.7900818488204141,
+      "token_coverage": 0.28935965334617236,
+      "comment_coverage": 0.5007221954742417,
+      "comment_cells": {
+        "block": 1881,
+        "line": 199
+      },
+      "ear_coverage": {}
+    },
+    "first_diff": null,
+    "diagnostics": [],
+    "skip_reasons": {
+      "behavior": "NO_FIXTURE"
+    },
+    "durations": {
+      "token": 0.3550669339999786,
+      "geometry": 0.0041506249999656575,
+      "compile": 0.0839467319999585
+    },
+    "compiler": {
+      "path": "/usr/bin/clang",
+      "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin",
+      "flags": [
+        "-std=c11",
+        "-pedantic-errors",
+        "-Wno-strict-prototypes",
+        "-resource-dir",
+        "/usr/lib/llvm-18/lib/clang/18"
+      ],
+      "_fingerprint": [
+        65024,
+        220829,
+        140592,
+        1716798380000000000
+      ]
+    },
+    "behavior_cases_compared": 0
+  },
+  "revision": {
+    "commit": "44c48e7d6e6c5c0da227e377774349761697be73",
+    "dirty": false
+  }
+}

@@ -1,0 +1,208 @@
+{
+  "verified": true,
+  "status": "OK",
+  "checks": {
+    "token": {
+      "status": "PASS",
+      "reason": null
+    },
+    "geometry": {
+      "status": "PASS",
+      "reason": null
+    },
+    "compile": {
+      "status": "PASS",
+      "reason": null
+    },
+    "behavior": {
+      "status": "NOT_RUN",
+      "reason": "NO_FIXTURE"
+    }
+  },
+  "diagnostics": [],
+  "attempt_history": [
+    {
+      "scale": 1.71875,
+      "width": 110,
+      "height": 55,
+      "failure_token_index": null,
+      "reason": null,
+      "elapsed_s": 0.8919768900000236
+    },
+    {
+      "scale": 1.6875,
+      "width": 108,
+      "height": 54,
+      "failure_token_index": null,
+      "reason": null,
+      "elapsed_s": 0.08781411300003583
+    },
+    {
+      "scale": 1.65625,
+      "width": 106,
+      "height": 53,
+      "failure_token_index": 1086,
+      "reason": "no remaining span can hold the token",
+      "elapsed_s": 0.06952888500006793
+    }
+  ],
+  "layout": {
+    "width": 108,
+    "height": 54,
+    "scale": 1.6875,
+    "attempts": 3
+  },
+  "font_id": "Roboto Mono Regular",
+  "cell_aspect": 0.5,
+  "code_fill_ratio": 0.8616491422246818,
+  "code_fill_warning": null,
+  "coverage": {
+    "total": 0.9402324294410626,
+    "token": 0.8616491422246818,
+    "comment": 0.07858328721638075,
+    "comment_cells": {
+      "block": 156,
+      "line": 128
+    }
+  },
+  "source_text": "#include <assert.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#ifndef MAX_NAME\n#define MAX_NAME 48\n#endif\n#define MAX_LINE 128\n\n\n                   enum                                                              //x=\n                   status                                                          {TODO,\n                  DOING,                                                          DONE};\n                  typedef                                                        struct //\n                 task{int id                                                    ;int //()&.\n                 priority;enum                                                status state;\n                char name[ /**/                                              MAX_NAME]; //=(\n                struct task*next                                            ;}Task;typedef\n               struct{Task*head;                                           int next_id;int //\n              count;}TaskList; /**/     static const char* /*=()&.*/     status_label(enum //)\n              status state){switch(state){case TODO:return\"\u5f85\u529e\";case DOING:return\"\u8fdb\u884c\u4e2d\"; //\n             case DONE:return\"\u5df2\u5b8c\u6210\";}return\"?\";}static void list_init(TaskList*list){list->\n             head=NULL;list->next_id /*+*/ =1;list->count=0;}static Task*list_add(TaskList*list\n            ,const char*name,int priority){Task*task=malloc(sizeof*task);if(task==NULL){return\n            NULL;} task->id=list->next_id++;task->priority=priority;task->state=TODO;strncpy //x\n           (task->name ,name,MAX_NAME-1);task->name[MAX_NAME /*=*/ -1]='\\0';Task**link=&list //)&\n           ->head;while(*link!= /*.*/ NULL &&(*link)->priority>=priority){link=&(*link)->next;}\n          task->next=*link;*link=task;list-> count++;assert /*:*/ (list->count>0);return task;} //\n          static Task*list_find(TaskList*list,int id){ for(Task*task=list /*)*/ ->head;task!= //)&\n         NULL;task=task->next){if(task->id==id){return task;}} return NULL;}static int //-x=()&.:o+\n        list_remove(TaskList /*&*/ *list,int id){for(Task**link=&list->head;*link !=NULL;link=&(* //\n       link)->next){if((*link)->id==id){Task*gone=*link;*link=gone->next;free(gone); list->count //.:\n      --;return 1;}}return 0;}        static void list_print(const        TaskList*list){printf( //+-x\n     \"\u5171 %d \u9879\u4efb\u52a1\\n\",list->              count );for(const Task*             task=list->head ;task!=\n     NULL;task=task->next) {                printf( /*-x=()&.:*/                \"  #%-3d P%d %-8s %s\\n\"\n    , task->id,task-> /*(*/                  priority, /*.:o+*/                  status_label(task-> //=\n   state),task->name);} }                    static void /*x=*/                  list_summary(const //)&.\n   TaskList*list){int /*+*/                  totals[3]={0,0,0};                  for( const Task*task= //\n   list-> head;task!=NULL;                  task=task->next){                   totals[ task->state]++;}\n   printf( /*)&.:o+-x=()&.:o*/            /*&.:o+-x=()&.:o+-x=()*/            //x=()&.:o+-x=()&.:o+-x=()&\n   \"\u5f85\u529e %d\uff0c\u8fdb\u884c\u4e2d %d\uff0c\u5df2\u5b8c\u6210 %d\\n\" ,totals[TODO],totals[DOING],totals [DONE] /*&*/ );}static void //.:o\n   list_free( TaskList*list){while(list->head!=NULL){Task*next=list->head->next;free(list->head);list->\n   head=next;} list->count=0;}static void trim_newline(char*line){size_t length=strlen(line);while(length\n   >0&&(line[ length-1]=='\\n'||line[length-1]=='\\r'))  {line[-- length]='\\0';}}static int handle(TaskList\n    *list, char*line){char command[16];int id=0;           int priority=0;int offset=0;if(sscanf(line,\n    \"%15s%n\",command,&offset)!=1){return 1;}if(            strcmp(command,\"add\")==0){if(sscanf(line+ //=\n     offset,\"%d %n\",&priority,&offset)==1&&priority     >=0){char*name=line+offset;name+=strspn(name,\n      \" \");Task*task=list_add( /*o*/ list,name,priority);if(task!=NULL){printf(\"\u5df2\u6dfb\u52a0 #%d\uff1a%s\\n\",task\n       ->id, task->name);}}else{puts(\"\u7528\u6cd5\uff1aadd <\u4f18\u5148\u7ea7> <\u540d\u79f0>\");}}else if(strcmp(command,\"start\")==\n        0|| strcmp(command,\"done\")==0){if(sscanf(line+offset,\"%d\",&id)==1&&list_find(list,id)!=NULL)\n         { list_find(list,id)->state=command[0]=='s'?DOING:DONE;printf(\"#%d -> %s\\n\", /*=*/ id, //=\n          status_label( list_find(list,id)->state));}else{puts(\"\u627e\u4e0d\u5230\u8be5\u4efb\u52a1\");}}else if(strcmp(\n            command,\"rm\")==0 ){if(sscanf(line+offset,\"%d\",&id)==1&&list_remove(list,id)){printf\n              (\"\u5df2\u5220\u9664 #%d\\n\",id );}else{puts(\"\u627e\u4e0d\u5230\u8be5\u4efb\u52a1\");} /*+*/ }else if(strcmp(command\n               ,\"ls\")==0){list_print(list) ;}else if(strcmp(command /*.*/ ,\"sum\")==0) /*)*/ {\n                  list_summary(list);}else if(strcmp(command ,\"quit\")==0){return 0;}else\n                    {printf(\"\u672a\u77e5\u547d\u4ee4\uff1a%s\\n\",command);}return 1;} int main(void){ //.:o+\n                       TaskList list;char line[MAX_LINE];list_init(&list); while( //+\n                           fgets(line,sizeof line,stdin)!=NULL){trim_newline //:o\n                               (line); if(!handle(&list,line)){break;}} //&.:\n                                    list_summary(&list); list_free(& //&\n                                             list);return 0;}\n\n\n",
+  "program_mode": true,
+  "preamble_text": "#include <assert.h>\n#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#ifndef MAX_NAME\n#define MAX_NAME 48\n#endif\n#define MAX_LINE 128\n\n\n",
+  "artwork_character_widths": {
+    "\u4e2d": 2,
+    "\u5148": 2,
+    "\u4efb": 2,
+    "\u9664": 2,
+    "\u8fdb": 2,
+    "\u627e": 2,
+    "\u672a": 2,
+    "\u529e": 2,
+    "\u5230": 2,
+    "\u7528": 2,
+    "\u5220": 2,
+    "\u52a1": 2,
+    "\u6210": 2,
+    "\u884c": 2,
+    "\u9879": 2,
+    "\uff0c": 2,
+    "\u540d": 2,
+    "\u4e0d": 2,
+    "\u79f0": 2,
+    "\u547d": 2,
+    "\uff1a": 2,
+    "\u5b8c": 2,
+    "\u5171": 2,
+    "\u7ea7": 2,
+    "\u6cd5": 2,
+    "\u6dfb": 2,
+    "\u5f85": 2,
+    "\u77e5": 2,
+    "\u5df2": 2,
+    "\u4f18": 2,
+    "\u4ee4": 2,
+    "\u52a0": 2,
+    "\u8be5": 2
+  },
+  "verification": {
+    "token_status": "PASS",
+    "geometry_status": "PASS",
+    "compile_status": "PASS",
+    "behavior_status": "NOT_RUN",
+    "geometry_metrics": {
+      "kind": "cat",
+      "cols": 108,
+      "rows": 54,
+      "cell_aspect": 0.5,
+      "bbox": {
+        "cols": 102,
+        "rows": 52,
+        "ratio": 0.9807692307692307
+      },
+      "allowed_cells": 3614,
+      "spans_total": 85,
+      "rows_with_multiple_spans": 23,
+      "eye_cells": {
+        "left": 115,
+        "right": 115
+      },
+      "nose_cells": 26,
+      "ear_gap_rows": 9,
+      "boundary_cells": {
+        "eye_left": 53,
+        "eye_right": 53,
+        "nose": 24
+      },
+      "holes": [
+        {
+          "cells": 115,
+          "centroid": {
+            "row": 25.895652173913042,
+            "col": 35.504347826086956
+          }
+        },
+        {
+          "cells": 115,
+          "centroid": {
+            "row": 25.895652173913042,
+            "col": 71.49565217391304
+          }
+        },
+        {
+          "cells": 26,
+          "centroid": {
+            "row": 34.61538461538461,
+            "col": 53.5
+          }
+        }
+      ],
+      "code_stroke_cells": 0,
+      "outside_canvas_cells": 0,
+      "outside_mask_cells": 0,
+      "out_of_bounds_cells": 0,
+      "hole_leakage_cells": 0,
+      "coverage": 0.9402324294410626,
+      "token_coverage": 0.8616491422246818,
+      "comment_coverage": 0.07858328721638075,
+      "comment_cells": {
+        "block": 156,
+        "line": 128
+      },
+      "ear_coverage": {
+        "ear_left": 0.9446254071661238,
+        "ear_right": 0.9250814332247557
+      }
+    },
+    "first_diff": null,
+    "diagnostics": [],
+    "skip_reasons": {
+      "behavior": "NO_FIXTURE"
+    },
+    "durations": {
+      "token": 0.4151923590000024,
+      "geometry": 0.008390522000013334,
+      "compile": 0.08796072100005858
+    },
+    "compiler": {
+      "path": "/usr/bin/clang",
+      "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin",
+      "flags": [
+        "-std=c11",
+        "-pedantic-errors",
+        "-Wno-strict-prototypes",
+        "-resource-dir",
+        "/usr/lib/llvm-18/lib/clang/18"
+      ],
+      "_fingerprint": [
+        65024,
+        220829,
+        140592,
+        1716798380000000000
+      ]
+    },
+    "behavior_cases_compared": 0
+  },
+  "revision": {
+    "commit": "44c48e7d6e6c5c0da227e377774349761697be73",
+    "dirty": false
+  }
+}

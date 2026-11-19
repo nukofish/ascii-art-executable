@@ -1,0 +1,174 @@
+{
+  "verified": true,
+  "status": "OK",
+  "checks": {
+    "token": {
+      "status": "PASS",
+      "reason": null
+    },
+    "geometry": {
+      "status": "PASS",
+      "reason": null
+    },
+    "compile": {
+      "status": "PASS",
+      "reason": null
+    },
+    "behavior": {
+      "status": "NOT_RUN",
+      "reason": "NO_FIXTURE"
+    }
+  },
+  "diagnostics": [],
+  "attempt_history": [
+    {
+      "scale": 1.0625,
+      "width": 68,
+      "height": 34,
+      "failure_token_index": null,
+      "reason": null,
+      "elapsed_s": 0.439372280999919
+    },
+    {
+      "scale": 1.03125,
+      "width": 66,
+      "height": 33,
+      "failure_token_index": null,
+      "reason": null,
+      "elapsed_s": 0.06948220999993282
+    },
+    {
+      "scale": 1.0,
+      "width": 64,
+      "height": 32,
+      "failure_token_index": 471,
+      "reason": "no remaining span can hold the token",
+      "elapsed_s": 0.04892331700000341
+    }
+  ],
+  "layout": {
+    "width": 66,
+    "height": 33,
+    "scale": 1.03125,
+    "attempts": 3
+  },
+  "font_id": "Roboto Mono Regular",
+  "cell_aspect": 0.5,
+  "code_fill_ratio": 0.8851251840942562,
+  "code_fill_warning": null,
+  "coverage": {
+    "total": 0.9182621502209131,
+    "token": 0.8851251840942562,
+    "comment": 0.03313696612665685,
+    "comment_cells": {
+      "block": 20,
+      "line": 25
+    }
+  },
+  "source_text": "#include <ctype.h>\n#include <stdio.h>\n#include <string.h>\n#define MAX_WORDS 512\n#define MAX_LEN 24\n#define TOP 5\n\n\n                                                   //:\n           /*-*/                                  //+-x\n           struct                                entry{\n          char                                  word[ //\n          MAX_LEN];                           unsigned\n         count;};          static /*&*/      struct entry\n        table[MAX_WORDS];static size_t used;static void //\n        add_word(const char*word){for(size_t i=0;i<used;i\n       ++){if(strcmp(table[i].word,word)==0){table[i].count\n       ++;return;}}if(used<MAX_WORDS){strcpy(table[used].\n      word,word);table[used++].count=1;}}static int before(\n      const struct entry*a,const struct entry*b){return a->\n     count!=b->count?a->count>b-> /*.*/ count:strcmp(a->word,\n    b->word )<0;}static void sort(struct entry*items,long low,\n   long high){if(         low>= high){          return;} struct\n  entry pivot=              items[(              low+high)/ 2];\n  long i=low,j =            high;while           (i<= j){while(\n  before(&items[i          ],&pivot))i           ++; while( //:o\n  before (&pivot,&      items[ j]))j--;if(    i<=j){ struct //-x\n  entry swap= items[i];items[i++ ]=items[j];items[j--]=swap;}}\n  sort(items,low,j);sort(items,i  , high);}int main(void){char\n  word[MAX_LEN];size_t length=      0; int c;unsigned long total\n   =0; while((c=getchar())!=EOF){if (isalpha(c)||c=='\\''){if(\n    length+1<sizeof word){word[length++ ]=(char)tolower(c);}}\n     else if(length>0){word[length]='\\0'; add_word(word); //.\n      total++;length=0;}}if(length>0){word[ length]='\\0'; //\n        add_word(word /*.*/ );total++;}sort(table,0,( long\n          )used-1);printf(\"%lu words, %zu distinct\\n\",\n             total,used);for(size_t i=0;i<used&&i<TOP\n                ;i++){ printf(\"%-12s %u\\n\",table[i\n                    ].word,table[ i].count);}\n                            return 0;}\n\n",
+  "program_mode": true,
+  "preamble_text": "#include <ctype.h>\n#include <stdio.h>\n#include <string.h>\n#define MAX_WORDS 512\n#define MAX_LEN 24\n#define TOP 5\n\n\n",
+  "artwork_character_widths": {},
+  "verification": {
+    "token_status": "PASS",
+    "geometry_status": "PASS",
+    "compile_status": "PASS",
+    "behavior_status": "NOT_RUN",
+    "geometry_metrics": {
+      "kind": "cat",
+      "cols": 66,
+      "rows": 33,
+      "cell_aspect": 0.5,
+      "bbox": {
+        "cols": 62,
+        "rows": 32,
+        "ratio": 0.96875
+      },
+      "allowed_cells": 1358,
+      "spans_total": 51,
+      "rows_with_multiple_spans": 13,
+      "eye_cells": {
+        "left": 44,
+        "right": 44
+      },
+      "nose_cells": 8,
+      "ear_gap_rows": 5,
+      "boundary_cells": {
+        "eye_left": 32,
+        "eye_right": 32,
+        "nose": 14
+      },
+      "holes": [
+        {
+          "cells": 44,
+          "centroid": {
+            "row": 15.795454545454545,
+            "col": 21.75
+          }
+        },
+        {
+          "cells": 44,
+          "centroid": {
+            "row": 15.795454545454545,
+            "col": 43.25
+          }
+        },
+        {
+          "cells": 8,
+          "centroid": {
+            "row": 20.75,
+            "col": 32.5
+          }
+        }
+      ],
+      "code_stroke_cells": 0,
+      "outside_canvas_cells": 0,
+      "outside_mask_cells": 0,
+      "out_of_bounds_cells": 0,
+      "hole_leakage_cells": 0,
+      "coverage": 0.9182621502209131,
+      "token_coverage": 0.8851251840942562,
+      "comment_coverage": 0.03313696612665685,
+      "comment_cells": {
+        "block": 20,
+        "line": 25
+      },
+      "ear_coverage": {
+        "ear_left": 0.8879310344827587,
+        "ear_right": 0.8879310344827587
+      }
+    },
+    "first_diff": null,
+    "diagnostics": [],
+    "skip_reasons": {
+      "behavior": "NO_FIXTURE"
+    },
+    "durations": {
+      "token": 0.37025451599993175,
+      "geometry": 0.0045554800000218165,
+      "compile": 0.09858221900003628
+    },
+    "compiler": {
+      "path": "/usr/bin/clang",
+      "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin",
+      "flags": [
+        "-std=c11",
+        "-pedantic-errors",
+        "-Wno-strict-prototypes",
+        "-resource-dir",
+        "/usr/lib/llvm-18/lib/clang/18"
+      ],
+      "_fingerprint": [
+        65024,
+        220829,
+        140592,
+        1716798380000000000
+      ]
+    },
+    "behavior_cases_compared": 0
+  },
+  "revision": {
+    "commit": "44c48e7d6e6c5c0da227e377774349761697be73",
+    "dirty": false
+  }
+}

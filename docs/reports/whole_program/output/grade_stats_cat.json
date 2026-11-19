@@ -1,0 +1,187 @@
+{
+  "verified": true,
+  "status": "OK",
+  "checks": {
+    "token": {
+      "status": "PASS",
+      "reason": null
+    },
+    "geometry": {
+      "status": "PASS",
+      "reason": null
+    },
+    "compile": {
+      "status": "PASS",
+      "reason": null
+    },
+    "behavior": {
+      "status": "NOT_RUN",
+      "reason": "NO_FIXTURE"
+    }
+  },
+  "diagnostics": [],
+  "attempt_history": [
+    {
+      "scale": 1.15625,
+      "width": 74,
+      "height": 37,
+      "failure_token_index": null,
+      "reason": null,
+      "elapsed_s": 0.5207925629999863
+    },
+    {
+      "scale": 1.125,
+      "width": 72,
+      "height": 36,
+      "failure_token_index": 465,
+      "reason": "no remaining span can hold the token",
+      "elapsed_s": 0.09419914800002971
+    }
+  ],
+  "layout": {
+    "width": 74,
+    "height": 37,
+    "scale": 1.15625,
+    "attempts": 2
+  },
+  "font_id": "Roboto Mono Regular",
+  "cell_aspect": 0.5,
+  "code_fill_ratio": 0.8258559622195986,
+  "code_fill_warning": null,
+  "coverage": {
+    "total": 0.9090909090909091,
+    "token": 0.8258559622195986,
+    "comment": 0.08323494687131051,
+    "comment_cells": {
+      "block": 88,
+      "line": 53
+    }
+  },
+  "source_text": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#define MAX_STUDENTS 64\n#define SUBJECTS 3\n\n\n                                                          //)\n             /**/                                        //.:\n            struct                                     student\n            {char                                     name[32]\n           ;int /*)*/                                scores[ //\n          SUBJECTS];                                int total;};\n          static const     char*const /*=()&.*/   subject_names[\n         SUBJECTS]={\"\u8bed\u6587\",\"\u6570\u5b66\",\"\u82f1\u8bed\"} /*+*/ ;static int //:o+\n         by_total_desc(const void*left,const void*right){const //\n        struct student*a=left;const struct student*b=right;if(a->\n        total /*-*/ !=b->total){return b->total-a->total;}return\n       strcmp(a ->name,b->name);}static int read_students(struct //\n       student* students /*:*/ ,int capacity){int count=0;while( //\n      count<capacity){ struct student*s=&students[count];if(scanf(\n     \"%31s %d %d %d\",s-> name /*o*/ ,&s->scores[0],&s->scores[1],&s->\n    scores[2])!=4){        break;}s-> total=0;     for(int i=0 ;i< //o\n   SUBJECTS;i++){s->          total+=s->              scores[i] ;}count\n   ++;}return count            ;}static                char band(int //\n  score){return                score>=90?              'A':score>=80? //\n  'B':score>=70?'C'           :score>=60?              'D':'F';}int main\n  (void){static struct      student students[       MAX_STUDENTS];int //\n  count= read_students( students,MAX_STUDENTS);if(count==0){puts( //&.:o\n  \"\u6ca1\u6709\u6570\u636e\");return 1 /*&*/ ;}qsort( students,(size_t)count,sizeof //-x\n  students[0],by_total_desc);puts       ( \"\u6392\u540d \u59d3\u540d \u603b\u5206 \u7b49\u7ea7\");for //)\n   (int i =0;i<count;i /*x*/ ++){       printf( \"%2d %-8s %3d %c\\n\",i+1\n    , students[i].name,students[i]. total,band(students /*:*/ [i]. //o\n     total/SUBJECTS)) /*.*/ ;}for(int j=0;j<SUBJECTS;j ++){int sum=0,\n      best=0,bands[5]={0};for( /*o*/ int i=0;i<count;i++){int score=\n       students[i].scores[j];sum+=score;best=score>best?score: best\n         ;bands[strchr(\"ABCDF\",band(score))-\"ABCDF\"]++;}printf(\n           \"%s \u5e73\u5747 %d.%02d \u6700\u9ad8 %d \u5206\u6bb5 A%d B%d C%d D%d F%d\\n\"\n             , /*)*/ subject_names /*)*/ [ /*=*/ j /*-*/ ] //\n                ,sum/count,sum*100/ /*o*/ count%100,best,\n                   bands[0],bands[1],bands[2],bands //:\n                        [3],bands[4]);} return //&\n                                   0;}\n\n",
+  "program_mode": true,
+  "preamble_text": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#define MAX_STUDENTS 64\n#define SUBJECTS 3\n\n\n",
+  "artwork_character_widths": {
+    "\u82f1": 2,
+    "\u6709": 2,
+    "\u6570": 2,
+    "\u5747": 2,
+    "\u8bed": 2,
+    "\u603b": 2,
+    "\u5e73": 2,
+    "\u540d": 2,
+    "\u6700": 2,
+    "\u7ea7": 2,
+    "\u6ca1": 2,
+    "\u5206": 2,
+    "\u9ad8": 2,
+    "\u7b49": 2,
+    "\u5b66": 2,
+    "\u6587": 2,
+    "\u636e": 2,
+    "\u59d3": 2,
+    "\u6bb5": 2,
+    "\u6392": 2
+  },
+  "verification": {
+    "token_status": "PASS",
+    "geometry_status": "PASS",
+    "compile_status": "PASS",
+    "behavior_status": "NOT_RUN",
+    "geometry_metrics": {
+      "kind": "cat",
+      "cols": 74,
+      "rows": 37,
+      "cell_aspect": 0.5,
+      "bbox": {
+        "cols": 70,
+        "rows": 36,
+        "ratio": 0.9722222222222222
+      },
+      "allowed_cells": 1694,
+      "spans_total": 58,
+      "rows_with_multiple_spans": 15,
+      "eye_cells": {
+        "left": 55,
+        "right": 55
+      },
+      "nose_cells": 12,
+      "ear_gap_rows": 6,
+      "boundary_cells": {
+        "eye_left": 36,
+        "eye_right": 36,
+        "nose": 20
+      },
+      "holes": [
+        {
+          "cells": 55,
+          "centroid": {
+            "row": 17.618181818181817,
+            "col": 24.4
+          }
+        },
+        {
+          "cells": 55,
+          "centroid": {
+            "row": 17.618181818181817,
+            "col": 48.6
+          }
+        },
+        {
+          "cells": 12,
+          "centroid": {
+            "row": 23.5,
+            "col": 36.5
+          }
+        }
+      ],
+      "code_stroke_cells": 0,
+      "outside_canvas_cells": 0,
+      "outside_mask_cells": 0,
+      "out_of_bounds_cells": 0,
+      "hole_leakage_cells": 0,
+      "coverage": 0.9090909090909091,
+      "token_coverage": 0.8258559622195986,
+      "comment_coverage": 0.08323494687131051,
+      "comment_cells": {
+        "block": 88,
+        "line": 53
+      },
+      "ear_coverage": {
+        "ear_left": 0.8819444444444444,
+        "ear_right": 0.9305555555555556
+      }
+    },
+    "first_diff": null,
+    "diagnostics": [],
+    "skip_reasons": {
+      "behavior": "NO_FIXTURE"
+    },
+    "durations": {
+      "token": 0.3577286910000339,
+      "geometry": 0.003724318999957177,
+      "compile": 0.08288008900001387
+    },
+    "compiler": {
+      "path": "/usr/bin/clang",
+      "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin",
+      "flags": [
+        "-std=c11",
+        "-pedantic-errors",
+        "-Wno-strict-prototypes",
+        "-resource-dir",
+        "/usr/lib/llvm-18/lib/clang/18"
+      ],
+      "_fingerprint": [
+        65024,
+        220829,
+        140592,
+        1716798380000000000
+      ]
+    },
+    "behavior_cases_compared": 0
+  },
+  "revision": {
+    "commit": "44c48e7d6e6c5c0da227e377774349761697be73",
+    "dirty": false
+  }
+}

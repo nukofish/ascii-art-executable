@@ -121,7 +121,10 @@ attempt shares it and a new attempt never resets the clock.
 deadline still caps how long layout can run. The production join checker
 [reuses lexing results after standalone delimiters](source.md#the-can_join-decision).
 The 244- and 364-line whole-program regressions explicitly use a 5 s layout
-budget to exercise that optimization.
+budget to exercise that optimization. Calling `fit_layout` directly with the
+plain `can_join` reuses prefix verdicts too; on those two programs it lays out
+the same masks in about 4 s and 6 s on Linux x86_64, where it previously ran
+out of the 60 s budget.
 
 The budget is tracked in two domains at once:
 

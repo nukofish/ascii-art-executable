@@ -1,0 +1,14 @@
+add 2 写实验报告
+add 5 复习数据结构
+add 2 买牛奶
+add x 坏输入
+start 2
+done 1
+ls
+rm 3
+rm 9
+foo
+ls
+sum
+quit
+add 1 不会被读到

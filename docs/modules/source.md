@@ -105,12 +105,17 @@ raw text. Token widths are measured in grid cells.
 
 ## The `can_join` decision
 
-By default `can_join` re-lexes the complete run plus the candidate and compares
-the result with the expected `(kind, spelling)` pairs. The production pipeline
-sets `checked_run=True` because Clang has already classified the input tokens
-and layout builds the run one checked join at a time. In that case the lexer
-starts at the last standalone delimiter (`()[]{},;`) or at the start of the
-run if there is none. Keeping the delimiter lets different runs reuse the
+By default `can_join` decides whether the complete run plus the candidate lexes
+to the expected `(kind, spelling)` pairs. Clang lexes the first pair in full.
+Each longer prefix of the run is then accepted only if the prefix before it was
+accepted and its last token passes the incremental step below, so the verdict
+equals a full re-lex while a run that grows token by token reuses every earlier
+prefix. A randomized test compares this against a full re-lex of every run.
+
+The production pipeline sets `checked_run=True` because layout builds the run
+one checked join at a time, so only the incremental step runs. In that step the
+lexer starts at the last standalone delimiter (`()[]{},;`) or at the start of
+the run if there is none. Keeping the delimiter lets different runs reuse the
 same cached suffix. A candidate delimiter can join directly unless it could
 complete a trigraph.
 
@@ -121,8 +126,8 @@ complete a trigraph.
 - `1` + `.` and `L` + `"a"` do not join: the concatenation is a different token.
 - An empty run is always joinable; an empty spelling is a programming error.
 
-Results are cached in the parent process by expected tokens, compiler flags and
-lexer timeout. Cache misses share one serialized child (`LexWorker`) with a
+Results and prefix verdicts are cached in the parent process by expected
+tokens, compiler flags and lexer timeout. Cache misses share one serialized child (`LexWorker`) with a
 single libclang index, bounded wait and a kill-and-restart path. C still checks
 its own context around every join decision; `can_join` itself is a local lexical
 helper, not a schedulable stage.

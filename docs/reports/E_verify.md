@@ -139,6 +139,31 @@ during prepass ended the job as `CANCELLED` with all four checks
 `NOT_RUN (CANCELLED)`. Web **Find functions** and CLI `--file` prepass have
 separate budgets. [F browser acceptance and sign-off in #53](https://github.com/nukofish/ascii-art-executable/pull/53)
 
+### Whole-program budgets and coverage
+
+Item 12 was frozen for single-function input. Whole-program mode (#58) keeps
+the same limits and adds no new ones:
+
+- Analysis uses the 5 s input-analysis limit. It covers the Clang
+  resource-directory lookup (and the SDK lookup on macOS) as well as parsing.
+- Layout is configured for 60 s (#59) but stays capped by the 30 s generation
+  budget. The 244- and 364-line regressions pass with an explicit 5 s layout
+  budget.
+- Verification lexes the artwork once (5 s), preprocesses the original and the
+  generated program (each one compiler invocation of at most 5 s), then
+  compiles and links the output (5 s). Custom code is never executed, so no
+  behavior budget applies.
+
+The **85% total** and **70% per cat ear** thresholds remain acceptance
+thresholds for the fixed-fixture matrix. They are not checked on each
+generation in either mode, and whole-program output reports coverage without
+a floor. The [whole-program samples](whole_program/README.md) measured
+90.20–95.61% for cat and circle with every cat ear at or above 88.2%, but
+79.01–88.71% for the CODE shape. A program's own token mix, not the mask,
+decides how densely its ink fills that shape, so a fixed floor there would
+reject valid programs. Geometry still requires zero out-of-bounds and zero
+hole-leakage cells.
+
 ## Whole-program verification sign-off
 
 E reviewed [#58](https://github.com/nukofish/ascii-art-executable/pull/58) at
@@ -156,6 +181,14 @@ one status and report the first mismatch. Details are in the
 | Translation unit without `main` | PASS | PASS | PASS (object) | NOT_RUN (NO_FIXTURE) |
 | `main` calls a declared function with no definition | PASS | PASS | FAIL (link) | NOT_RUN (COMPILE_NOT_PASS) |
 | Relocating a macro redefinition changes the expansion | FAIL | NOT_RUN (TOKEN_NOT_PASS) | NOT_RUN (TOKEN_NOT_PASS) | NOT_RUN (TOKEN_NOT_PASS) |
+
+Since `e314ebd`, an `#undef` after program code, and a conditional block that
+contains code after program code, are rejected during analysis with
+`UNSUPPORTED_SOURCE` at their own line, so they no longer reach the token
+check. A relocated `#define` that changes the expansion still fails the token
+check as in the last row. `__LINE__`, the clock macros and the spacing copied
+by stringizing are neutralised in the preprocessed comparison; see the
+[verification guide](../modules/verify.md#checks-and-report-fields).
 
 The local HTTP probes checked that downloaded JSON preserved each status and
 reason. They recorded zero behavior comparisons and zero calls to the

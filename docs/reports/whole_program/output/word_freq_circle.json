@@ -1,0 +1,129 @@
+{
+  "verified": true,
+  "status": "OK",
+  "checks": {
+    "token": {
+      "status": "PASS",
+      "reason": null
+    },
+    "geometry": {
+      "status": "PASS",
+      "reason": null
+    },
+    "compile": {
+      "status": "PASS",
+      "reason": null
+    },
+    "behavior": {
+      "status": "NOT_RUN",
+      "reason": "NO_FIXTURE"
+    }
+  },
+  "diagnostics": [],
+  "attempt_history": [
+    {
+      "scale": 1.0,
+      "width": 64,
+      "height": 32,
+      "failure_token_index": null,
+      "reason": null,
+      "elapsed_s": 0.5581883359999438
+    }
+  ],
+  "layout": {
+    "width": 64,
+    "height": 32,
+    "scale": 1.0,
+    "attempts": 1
+  },
+  "font_id": "Roboto Mono Regular",
+  "cell_aspect": 0.5,
+  "code_fill_ratio": 0.7456575682382134,
+  "code_fill_warning": null,
+  "coverage": {
+    "total": 0.901985111662531,
+    "token": 0.7456575682382134,
+    "comment": 0.15632754342431762,
+    "comment_cells": {
+      "block": 190,
+      "line": 62
+    }
+  },
+  "source_text": "#include <ctype.h>\n#include <stdio.h>\n#include <string.h>\n#define MAX_WORDS 512\n#define MAX_LEN 24\n#define TOP 5\n\n\n                        struct entry{ //\n                  char word[MAX_LEN]; //:o+-x=\n               unsigned count /*=*/ ;};static //o\n            struct entry table[ MAX_WORDS] /*o*/ ;\n          static size_t used;static void add_word( //+\n        const char /*-*/ *word){for(size_t i= 0 /*+*/ ;i\n      <used;i++){if( /*&*/ strcmp(table[i].word,word)==0){\n     table[i]. /*=*/ count++;return;}}if(used<MAX_WORDS){\n    strcpy( table[used]. /*&*/ word,word);table[used++ //&.:\n   ]. /*+*/ count=1;}}static int before( /*)*/ const struct\n  entry*a,const struct entry* /*.*/ b){ return a->count!=b->\n count /*.*/ ?a->count>b->count:strcmp /*o*/ (a->word ,b->word)\n <0 /*.*/ ;}static void sort(struct entry*items /*-*/ ,long low\n, long high){if(low /*&*/ >=high){return;}struct entry pivot= //\nitems[(low +high)/2 /*o*/ ];long i=low,j=high; /*&*/ while(i<=j)\n{while(before /*&*/ (&items[i] ,&pivot)) /*=*/ i++;while(before(\n&pivot, /*=*/ &items[j]))j--; /*)*/ if(i<=j){struct entry swap=\nitems[i];items[i++] /*:*/ =items[j];items[j--] /*)*/ =swap;}} //\nsort( items,low /*.*/ ,j);sort(items,i,high /*)*/ );}int main(\n void){char /*&*/ word[ MAX_LEN];size_t length=0; /*(*/ int c;\n unsigned long total=0;while( /*.*/ (c= getchar())!=EOF){if( //\n  isalpha(c)||c=='\\'' /*x*/ ){if(length+1<sizeof word /*(*/ ){\n   word[length++]=(char /*.*/ )tolower(c);}}else if(length //\n    >0){word[ length]= /*o*/ '\\0';add_word(word);total //-x=\n     ++;length /*(*/ =0;}}if(length>0 /*.*/ ){ word[length]\n      ='\\0';add_word( /*(*/ word);total++;}sort(table //&.\n        ,0,(long) used-1) /*-*/ ;printf( //&.:o+-x=()&.:\n          \"%lu words, %zu distinct\\n\",total,used);for(\n            size_t i=0;i<used&& /*=*/ i<TOP;i++){ //\n               printf(\"%-12s %u\\n\" /*o*/ ,table[i\n                  ] .word,table[i].count //:o+\n                        );}return 0;} //\n",
+  "program_mode": true,
+  "preamble_text": "#include <ctype.h>\n#include <stdio.h>\n#include <string.h>\n#define MAX_WORDS 512\n#define MAX_LEN 24\n#define TOP 5\n\n\n",
+  "artwork_character_widths": {},
+  "verification": {
+    "token_status": "PASS",
+    "geometry_status": "PASS",
+    "compile_status": "PASS",
+    "behavior_status": "NOT_RUN",
+    "geometry_metrics": {
+      "kind": "circle",
+      "cols": 64,
+      "rows": 32,
+      "cell_aspect": 0.5,
+      "bbox": {
+        "cols": 64,
+        "rows": 32,
+        "ratio": 1.0
+      },
+      "allowed_cells": 1612,
+      "spans_total": 32,
+      "rows_with_multiple_spans": 0,
+      "eye_cells": {
+        "left": 0,
+        "right": 0
+      },
+      "nose_cells": 0,
+      "ear_gap_rows": 0,
+      "boundary_cells": {},
+      "holes": [],
+      "code_stroke_cells": 0,
+      "outside_canvas_cells": 0,
+      "outside_mask_cells": 0,
+      "out_of_bounds_cells": 0,
+      "hole_leakage_cells": 0,
+      "coverage": 0.901985111662531,
+      "token_coverage": 0.7456575682382134,
+      "comment_coverage": 0.15632754342431762,
+      "comment_cells": {
+        "block": 190,
+        "line": 62
+      },
+      "ear_coverage": {}
+    },
+    "first_diff": null,
+    "diagnostics": [],
+    "skip_reasons": {
+      "behavior": "NO_FIXTURE"
+    },
+    "durations": {
+      "token": 0.38443341300001066,
+      "geometry": 0.00233750899997176,
+      "compile": 0.08430986300004406
+    },
+    "compiler": {
+      "path": "/usr/bin/clang",
+      "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin",
+      "flags": [
+        "-std=c11",
+        "-pedantic-errors",
+        "-Wno-strict-prototypes",
+        "-resource-dir",
+        "/usr/lib/llvm-18/lib/clang/18"
+      ],
+      "_fingerprint": [
+        65024,
+        220829,
+        140592,
+        1716798380000000000
+      ]
+    },
+    "behavior_cases_compared": 0
+  },
+  "revision": {
+    "commit": "44c48e7d6e6c5c0da227e377774349761697be73",
+    "dirty": false
+  }
+}

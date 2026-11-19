@@ -1,0 +1,6 @@
+28 words, 12 distinct
+it           4
+of           4
+the          4
+was          4
+age          2

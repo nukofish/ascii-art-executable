@@ -198,6 +198,49 @@ def test_can_join_checks_the_suffix_after_a_delimiter(pairs):
     assert source.can_join(run[:-1], run[-1], checked_run=True) is False
 
 
+# Short spellings that join into longer C tokens, plus the delimiters that the
+# incremental check treats as boundaries.
+_JOIN_POOL = (
+    ".", "+", "-", ">", "<", "=", "/", "*", "?", ":", "%", "&", "|", "!",
+    "(", ")", "[", "]", "{", "}", ",", ";",
+    "a", "L", "u8", "e", "x", "1", "0", "0x1p", "1e", '"s"', "'c'",
+)
+
+
+def _lex_alone(spelling):
+    reply = source._join_worker.request(
+        {"mode": "lex", "text": spelling, "flags": list(VerificationProfile().flags)},
+        VerificationProfile().lex_timeout,
+    )
+    (token,) = reply["tokens"]
+    return token["kind"], token["spelling"]
+
+
+def test_default_can_join_matches_a_full_relex_of_every_run():
+    import random
+
+    rng = random.Random(58)
+    kinds = dict(_lex_alone(spelling)[::-1] for spelling in _JOIN_POOL)
+    full_check = source._can_join_cached.__wrapped__
+    flags = tuple(VerificationProfile().flags)
+    timeout = VerificationProfile().lex_timeout
+    fixed = (
+        ("?", "?", "("), ("?", "?", ")"), ("a", "?", "?", "("), (";", "?", "?", ")"),
+        (".", ".", "."), ("/", "*"), ("/", "/"), ("+", "+"), ("-", ">"), ("<", "<", "="),
+        ("L", '"s"'), ("u8", '"s"'), ("1", "e", "+"), ("0x1p", "+"), ("a", ";", "1", "e"),
+        ("%", ":", "%", ":"), ("<", ":"), (":", ">"), ("<", "%"),
+    )
+    spellings = [*fixed, *(rng.choices(_JOIN_POOL, k=rng.randint(2, 7)) for _ in range(600))]
+    for chosen in spellings:
+        pairs = [(kinds[spelling], spelling) for spelling in chosen]
+        run = tokens(*pairs)
+        # Grow the run the way the layout does, and keep going past a refusal
+        # because public callers may ask about any run.
+        for end in range(2, len(run) + 1):
+            expected = full_check(tuple(pairs[:end]), flags, timeout)
+            assert source.can_join(run[:end - 1], run[end - 1]) is expected, pairs[:end]
+
+
 def test_three_dots_and_empty_run():
     run = tokens(("PUNCTUATION", "."), ("PUNCTUATION", "."), ("PUNCTUATION", "."))
     assert source.can_join(run[:-1], run[-1], VerificationProfile()) is False
