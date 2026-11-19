@@ -6,6 +6,7 @@ let samples = [];
 let active = null;
 let busy = false;
 let cancelRequested = false;
+let generatedSource = null;
 
 async function api(path, options = {}) {
   const response = await fetch(path, options);
@@ -47,10 +48,16 @@ function showChecks(checks = {}) {
 }
 function resetResult() {
   sessionStorage.removeItem("codeart-job");
-  byId("output").hidden = true;
+  generatedSource = null;
+  byId("artwork-preview").hidden = true;
+  byId("output-preamble").hidden = true;
+  byId("output-preamble").textContent = "";
   byId("output").textContent = "";
+  byId("copy-source").hidden = true;
+  byId("copy-source").textContent = "Copy code";
+  byId("copy-feedback").textContent = "";
   byId("empty").hidden = false;
-  byId("dimensions").textContent = "AWAITING GENERATION";
+  byId("dimensions").textContent = "";
   byId("metrics").hidden = true;
   byId("download").hidden = true;
   byId("report").hidden = true;
@@ -68,6 +75,7 @@ function setBusy(value) {
   byId("source").readOnly = value;
   byId("file").disabled = value;
   byId("file-mode").disabled = value;
+  byId("program-mode").disabled = value;
   byId("function").disabled = value;
   byId("inspect-file").disabled = value;
   byId("cancel").hidden = !value;
@@ -76,6 +84,13 @@ function setBusy(value) {
 }
 function syncFileScope() {
   byId("file-scope").hidden = !byId("file-mode").checked;
+  if (!byId("file-mode").checked) byId("candidates").hidden = true;
+  byId("program-scope").hidden = !byId("program-mode").checked;
+  byId("file-controls").hidden = byId("program-mode").checked;
+  byId("input-encoding").textContent = byId("program-mode").checked ? "C11 · UTF-8" : "C11 · ASCII";
+  byId("input-kind").textContent = byId("program-mode").checked ? "Complete C program"
+    : byId("file-mode").checked ? "Extract one function"
+      : byId("sample").value ? "Built-in sample · 8 behavior inputs" : "Custom function";
 }
 function showCandidates(extraction) {
   byId("function").replaceChildren(new Option("First eligible function", ""));
@@ -92,16 +107,41 @@ function showCandidates(extraction) {
     extraction.candidates.map(({source_text, ...candidate}) => candidate), null, 2);
   byId("candidates").hidden = !extraction.candidates.length;
 }
+function showArtwork(text, widths = {}) {
+  const output = byId("output");
+  if (!Object.keys(widths).length) {
+    output.textContent = text;
+    return;
+  }
+  output.replaceChildren();
+  let offset = 0;
+  for (const match of text.matchAll(/[^\x00-\x7f]/gu)) {
+    const [char] = match;
+    const glyph = document.createElement("span");
+    glyph.className = "artwork-glyph";
+    glyph.style.width = widths[char] + "ch";
+    glyph.textContent = char;
+    output.append(text.slice(offset, match.index), glyph);
+    offset = match.index + char.length;
+  }
+  output.append(text.slice(offset));
+}
 function render(job) {
   const result = job.result;
   byId("file-mode").checked = job.file_mode ?? Boolean(result.prepass);
+  byId("program-mode").checked = job.program_mode ?? result.program_mode ?? false;
   syncFileScope();
   if (result.prepass) showCandidates(result.prepass);
   showChecks(result.checks);
   if (result.source_text !== null) {
-    byId("output").textContent = result.source_text;
-    byId("output").hidden = false;
+    generatedSource = result.source_text;
+    const prefix = result.preamble_text || "";
+    byId("output-preamble").textContent = prefix;
+    byId("output-preamble").hidden = !prefix;
+    showArtwork(generatedSource.slice(prefix.length), result.artwork_character_widths);
+    byId("artwork-preview").hidden = false;
     byId("empty").hidden = true;
+    byId("copy-source").hidden = false;
     byId("download").href = "/api/jobs/" + job.id + "/source.c";
     byId("download").hidden = false;
   }
@@ -109,7 +149,13 @@ function render(job) {
   byId("report").hidden = false;
   byId("export-note").textContent = result.verified ? "LF line endings · UTF-8" : "Review diagnostics before using this output.";
   const layout = result.layout;
-  if (layout) byId("dimensions").textContent = layout.width + " × " + layout.height + " CELLS";
+  if (layout) {
+    byId("dimensions").textContent = layout.width + " × " + layout.height + " CELLS";
+    const preview = byId("artwork-preview");
+    // The bundled font's advance is 0.60 em. Round up to leave room at the edge.
+    preview.style.setProperty("--art-width-em", layout.width * 0.61);
+    preview.style.setProperty("--art-height-em", layout.height * 0.61 / (result.cell_aspect || 0.5));
+  }
   byId("font-label").textContent = (result.font_id || "—") + " · fixed character grid";
   if (result.cell_aspect) {
     document.documentElement.style.setProperty("--cell-height", (1 / result.cell_aspect).toFixed(4) + "ch");
@@ -176,6 +222,19 @@ function render(job) {
   byId("summary").textContent = result.verified ? "Verified" : "Review required";
   status(message + (result.code_fill_warning ? " " + result.code_fill_warning : ""), !result.verified);
 }
+byId("copy-source").addEventListener("click", async () => {
+  const source = generatedSource;
+  if (source === null) return;
+  try {
+    await navigator.clipboard.writeText(source);
+    if (source === generatedSource) {
+      byId("copy-source").textContent = "Copied";
+      byId("copy-feedback").textContent = "Complete source copied.";
+    }
+  } catch {
+    if (source === generatedSource) status("Clipboard unavailable. Use Download .c source.", true);
+  }
+});
 async function poll(identifier) {
   if (active !== identifier) return;
   try {
@@ -187,7 +246,9 @@ async function poll(identifier) {
     }
     render(job);
     active = null;
-    if (!job.file_mode || job.result.status !== "OK") sessionStorage.removeItem("codeart-job");
+    if (!(job.file_mode || job.program_mode) || job.result.status !== "OK") {
+      sessionStorage.removeItem("codeart-job");
+    }
     setBusy(false);
   } catch (error) {
     if (active !== identifier) return;
@@ -211,7 +272,9 @@ byId("generator").addEventListener("submit", async event => {
     const response = await api("/api/generate", {
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({source: byId("source").value, shape: byId("shape").value,
-        file_mode: byId("file-mode").checked, function: byId("function").value || null,
+        file_mode: byId("file-mode").checked,
+        program_mode: byId("program-mode").checked,
+        function: byId("function").value || null,
         scale: Number(byId("scale").value), sample: byId("sample").value || null})
     });
     active = response.id;
@@ -242,17 +305,31 @@ byId("sample").addEventListener("change", () => {
   if (sample) {
     byId("source").value = sample.source;
     byId("file-mode").checked = false;
+    byId("program-mode").checked = false;
     byId("function").replaceChildren(new Option("First eligible function", ""));
     byId("candidates").textContent = "";
     byId("candidates").hidden = true;
-    syncFileScope();
   }
-  byId("input-kind").textContent = sample ? "Built-in sample · 8 behavior inputs" : "Custom input · no behavior fixture";
+  syncFileScope();
+  resetResult();
+});
+byId("program-mode").addEventListener("change", () => {
+  if (byId("program-mode").checked) {
+    byId("file-mode").checked = false;
+    byId("sample").value = "";
+  }
+  syncFileScope();
+  resetResult();
+});
+byId("file-mode").addEventListener("change", () => {
+  if (byId("file-mode").checked) byId("program-mode").checked = false;
+  else byId("candidates").hidden = true;
+  syncFileScope();
   resetResult();
 });
 byId("source").addEventListener("input", () => {
   byId("sample").value = "";
-  byId("input-kind").textContent = "Custom input · no behavior fixture";
+  syncFileScope();
   resetResult();
   status("Source changed. Generate to update the result.");
 });
@@ -263,7 +340,8 @@ byId("file").addEventListener("change", async event => {
   if (!file) return;
   if (file.size > 900000) { status("Choose a source file smaller than 900 KB.", true); return; }
   byId("source").value = await file.text();
-  byId("file-mode").checked = true;
+  byId("file-mode").checked = false;
+  byId("program-mode").checked = true;
   syncFileScope();
   byId("source").dispatchEvent(new Event("input"));
 });
@@ -284,7 +362,7 @@ Promise.all([api("/api/samples"), api("/api/environment")]).then(([data, environ
     api("/api/jobs/" + previous).then(job => {
       byId("source").value = job.input_source ?? job.source;
       byId("file-mode").checked = job.file_mode ?? Boolean(job.result && job.result.prepass);
-      syncFileScope();
+      byId("program-mode").checked = job.program_mode ?? job.result?.program_mode ?? false;
       if (job.result && job.result.prepass) showCandidates(job.result.prepass);
       else if (job.file_mode && job.function) {
         byId("function").append(new Option(job.function, job.function));
@@ -293,7 +371,7 @@ Promise.all([api("/api/samples"), api("/api/environment")]).then(([data, environ
       byId("shape").value = job.shape;
       byId("scale").value = String(job.scale);
       byId("sample").value = job.sample || "";
-      byId("input-kind").textContent = job.sample ? "Built-in sample · 8 behavior inputs" : "Custom input · no behavior fixture";
+      syncFileScope();
       poll(previous);
     }).catch(error => {
       sessionStorage.removeItem("codeart-job");
@@ -301,9 +379,6 @@ Promise.all([api("/api/samples"), api("/api/environment")]).then(([data, environ
       setBusy(false);
       status(error.message, true);
     });
-  } else {
-    byId("sample").value = "max2";
-    byId("sample").dispatchEvent(new Event("change"));
   }
 }).catch(error => status(error.message, true));
 
@@ -325,10 +400,4 @@ byId("source").addEventListener("input", () => {
   byId("candidates").textContent = "";
   byId("candidates").hidden = true;
 });
-byId("file-mode").addEventListener("change", () => {
-  syncFileScope();
-  if (!byId("file-mode").checked) byId("candidates").hidden = true;
-  resetResult();
-});
-byId("function").addEventListener("change", resetResult);
 syncFileScope();

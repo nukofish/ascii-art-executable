@@ -3,7 +3,7 @@
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 
-from .contracts import CheckStatus, ErrorCode, GenerationResult, GenerationStatus
+from .contracts import CheckStatus, ErrorCode, GenerationResult, GenerationStatus, character_cells
 
 CHECKS = ("token", "geometry", "compile", "behavior")
 
@@ -55,6 +55,7 @@ def describe_result(result):
     )
     plan = result.plan
     rendered = result.rendered
+    artwork = rendered.artwork_source_text if rendered else None
     history = plan.attempt_history if plan else next(
         (item.details["attempt_history"] for item in result.diagnostics
          if "attempt_history" in item.details), (),
@@ -78,6 +79,11 @@ def describe_result(result):
             "comment": rendered.comment_coverage, "comment_cells": rendered.comment_cells,
         } if rendered else None,
         "source_text": rendered.source_text if rendered else None,
+        "program_mode": rendered.program_mode if rendered else False,
+        "preamble_text": rendered.preamble_text if rendered else "",
+        "artwork_character_widths": {
+            char: character_cells(char) for char in set(artwork or "") if not char.isascii()
+        },
         "verification": json_value(report) if report else None,
     }
 

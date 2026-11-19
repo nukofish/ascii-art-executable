@@ -272,12 +272,17 @@ def test_code_fill_note_is_neutral_and_uses_the_ten_percent_threshold():
     from codeart.contracts import GenerationResult, RenderedCode
     from codeart.presentation import LOW_CODE_FILL_WARNING, describe_result
 
-    def report_for(ratio):
-        rendered = RenderedCode("", {}, 0.99, ratio, 0.99 - ratio, {"block": 0, "line": 0})
+    def report_for(ratio, *, program_mode=False):
+        rendered = RenderedCode(
+            "", {}, 0.99, ratio, 0.99 - ratio, {"block": 0, "line": 0},
+            program_mode=program_mode,
+        )
         return describe_result(GenerationResult(rendered=rendered))
 
     low = report_for(0.09)
     high = report_for(0.10)
+    program = report_for(0.01, program_mode=True)
     assert low["code_fill_warning"] == LOW_CODE_FILL_WARNING
     assert "smaller shape" not in low["code_fill_warning"]
     assert high["code_fill_warning"] is None
+    assert program["code_fill_warning"] == LOW_CODE_FILL_WARNING

@@ -1,9 +1,9 @@
 # Module D — comment filling and source output (`codeart/fill.py`)
 
-D writes the tokens that C placed and fills every remaining fillable cell with
-the two comment forms E accepts. It never moves, resizes, reorders or rewrites
-a token, and it never writes into a hole, a `protected_blank` or another
-token's cells.
+D writes the tokens that C placed and fills remaining fillable cells with the
+two comment forms E accepts. After fitting a complete program, C may reserve
+short gaps for comments like `/*o*/` within the chosen mask. D preserves token placements,
+order and spelling and respects holes and `protected_blanks`.
 
 ## Interface
 
@@ -29,24 +29,28 @@ rendered = render_source(
 
 ## Canvas rules
 
-1. Each placement writes `token.spelling` at `(row, col)`; text cell count is
-   `token.width == len(token.spelling)`, so spaces inside a string literal are
-   part of the token and are never treated as gaps.
+1. Each placement writes `token.spelling` at `(row, col)` and occupies
+   `token.width` grid cells. Wide characters occupy two cells but are written
+   once. Spaces inside a string literal remain part of the token.
 2. `mask.allowed == False` cells stay blank (holes).
 3. `protected_blanks` stay blank (mandatory separators chosen by C).
 4. A free gap is one contiguous run inside a single span. Gaps never cross a
    hole or another span.
-5. Every output row ends with LF, including the last row. Trailing spaces are
+5. In complete-program mode, C can spread short gaps across the token stream
+   using only the chosen mask's spare space.
+6. Every output row ends with LF, including the last row. Trailing spaces are
    trimmed; a token's trailing spaces are kept.
 
 ## Comment grammar
 
-Only two forms are emitted; E's geometry checker matches the same grammar.
+Two forms are emitted. Ordinary inputs use `=` for the body. Complete
+programs vary the body with the characters in `PROGRAM_FILL_PATTERN`.
+E's geometry checker matches the forms for each mode.
 
 ### Block comments (interior gaps)
 
 ```
-/*====...====*/          # at least "/**/" (4 cells), body is only "="
+/*====...====*/          # at least "/**/" (4 cells)
 ```
 
 - If the gap touches a real token on a side, reserve one blank cell on that
@@ -58,7 +62,7 @@ Only two forms are emitted; E's geometry checker matches the same grammar.
 ### Line comments (row tail only)
 
 ```
-//====...====            # "//" plus "=" body, at least 2 cells
+//====...====            # at least "//" (2 cells)
 ```
 
 - Only at the tail of the **last span of a row** and only when no real token
@@ -71,8 +75,8 @@ Only two forms are emitted; E's geometry checker matches the same grammar.
 
 ## Coverage
 
-The denominator is the number of `allowed == True` cells; only non-space
-characters inside allowed cells count as ink. Token-internal spaces and
+The denominator is the number of `allowed == True` cells. Non-space
+characters count once per occupied cell. Token-internal spaces and
 boundary blanks are not ink.
 
 ```

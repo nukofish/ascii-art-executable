@@ -9,6 +9,7 @@ from math import isfinite
 from threading import Event
 from time import monotonic
 from typing import Protocol
+from unicodedata import category, east_asian_width
 
 
 class CheckStatus(str, Enum):
@@ -200,6 +201,9 @@ class SourceModel:
     function_name: str
     signature: str
     original_comments: Sequence[Token] = ()
+    program_mode: bool = False
+    preamble_text: str = ""
+    has_main: bool = False
 
 
 @dataclass(frozen=True)
@@ -223,11 +227,8 @@ class AttemptRecord:
 class LayoutOptions:
     """Layout stage limits.
 
-    ``layout_timeout_s`` defaults to 60 s: a real 240-400 line function
-    measured 5-8 s with the current non-incremental ``can_join``, so the old
-    5 s default guaranteed ``LAYOUT_TIMEOUT`` for normally sized programs.
-    The real performance fix (incremental/cached ``can_join``) is tracked
-    separately; this default is only a budget widening.
+    ``layout_timeout_s`` defaults to 60 s. The enclosing pipeline deadline
+    can impose a shorter budget.
     """
 
     base_height_rows: int = 32
@@ -252,6 +253,24 @@ class LayoutPlan:
     attempt_history: Sequence[AttemptRecord]
 
 
+PROGRAM_FILL_PATTERN = ".:o+-x=()&"
+
+
+def is_grid_character(char: str) -> bool:
+    return " " <= char <= "~" or (char.isprintable() and not category(char).startswith("M"))
+
+
+def character_cells(char: str) -> int:
+    return 2 if east_asian_width(char) in ("W", "F") else 1
+
+
+def grid_text(text: str) -> str:
+    """Return one character per cell for measuring and checking grid slices."""
+    if text.isascii():
+        return text
+    return "".join(char * character_cells(char) for char in text)
+
+
 @dataclass(frozen=True)
 class FillOptions:
     allow_line_comments: bool = True
@@ -267,6 +286,9 @@ class RenderedCode:
     token_coverage: float
     comment_coverage: float
     comment_cells: Mapping[str, int]
+    artwork_source_text: str | None = None
+    program_mode: bool = False
+    preamble_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -311,6 +333,7 @@ class GenerationRequest:
     fill_options: FillOptions = field(default_factory=FillOptions)
     fixtures: object = None
     timeout_s: float = 30.0
+    program_mode: bool = False
 
     def __post_init__(self) -> None:
         if not isfinite(self.timeout_s) or self.timeout_s <= 0:
@@ -395,3 +418,4 @@ class PipelineDeps:
     layout_engine: LayoutEngine
     renderer: Renderer
     verifier: Verifier
+    program_analyzer: Analyzer | None = None

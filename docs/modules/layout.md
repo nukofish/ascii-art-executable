@@ -44,6 +44,13 @@ plan = fit_layout(
    span without committing anything; when no span can hold it, the attempt
    fails and reports that token's index.
 
+For complete programs, the initial estimate targets 85% token occupancy.
+The engine grows by a few rows when a candidate almost fits and probes smaller
+masks after a fit, within the same attempt and time limits. It selects a
+canvas from the original tokens and then redistributes tail slack inside
+that canvas. Each added inline gap is at most seven cells, enough for a
+short comment such as ` /*o*/ `.
+
 ## Initial size estimate
 
 Before the retry loop, the engine builds a scale-1 base mask and measures it
@@ -110,25 +117,11 @@ after height rounding, so a base of 32 rounded to 33 rows reports
 A single layout-stage budget is derived once, before the retry loop, so every
 attempt shares it and a new attempt never resets the clock.
 
-`layout_timeout_s` defaults to **60 s**. The old 5 s default was below the
-measured cost of laying out a normally sized function with the current,
-non-incremental `can_join` (real `build_mask`/`can_join`, `base_height_rows=32`,
-`max_columns=800`, `max_rows=600`):
-
-| tokens | approx. lines | measured layout time |
-|---|---|---|
-| 2243 | 123 | 1.96 s |
-| 4463 | 243 | 5.11 s |
-| 6683 | 363 | 8.06 s |
-
-So any program above roughly 240 lines exceeded 5 s and ended in
-`LAYOUT_TIMEOUT` regardless of its actual layout. 60 s covers the 240-400 line
-range with headroom while still bounding a genuinely runaway layout.
-
-This is a budget widening, not a performance fix: `can_join` still re-lexes
-the whole contiguous run on every check, which makes layout O(n²). Large
-functions should still rely on making `can_join` incremental/cached; that
-optimization is tracked as a separate layout item.
+`layout_timeout_s` defaults to **60 s**. The generation request's overall
+deadline still caps how long layout can run. The production join checker
+[reuses lexing results after standalone delimiters](source.md#the-can_join-decision).
+The 244- and 364-line whole-program regressions explicitly use a 5 s layout
+budget to exercise that optimization.
 
 The budget is tracked in two domains at once:
 
@@ -159,6 +152,8 @@ codes - never with an `AttributeError` before the first attempt.
   `CANCELLED` / `PIPELINE_TIMEOUT` through the wrapped context, before the
   stage budget is considered.
 - Running past either layout-stage deadline is reported as `LAYOUT_TIMEOUT`.
+  A complete program can keep an already successful layout if an optional
+  smaller-size probe reaches that deadline.
 - Each attempt's `elapsed_s` covers both mask generation and token packing.
 
 ## Attempt history

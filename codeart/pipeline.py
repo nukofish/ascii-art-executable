@@ -1,5 +1,7 @@
 """Assemble and run the independent analysis, layout, render and verify stages."""
 
+from dataclasses import replace
+from functools import partial
 from importlib import import_module
 from threading import Event
 from time import monotonic
@@ -34,10 +36,11 @@ def production_deps() -> PipelineDeps:
     return PipelineDeps(
         analyzer=modules["source"].analyze_source,
         mask_builder=build_mask,
-        join_checker=modules["source"].can_join,
+        join_checker=partial(modules["source"].can_join, checked_run=True),
         layout_engine=modules["layout"].fit_layout,
         renderer=modules["fill"].render_source,
         verifier=modules["verify"].verify,
+        program_analyzer=modules["source"].analyze_program,
     )
 
 
@@ -58,7 +61,12 @@ def generate(
 
         stage = "analysis"
         ctx.check()
-        model = deps.analyzer(request.source_text, request.profile, ctx=ctx)
+        analyzer = deps.analyzer
+        if request.program_mode:
+            analyzer = deps.program_analyzer
+            if analyzer is None:
+                analyzer = import_module(f"{__package__}.source").analyze_program
+        model = analyzer(request.source_text, request.profile, ctx=ctx)
 
         stage = "layout"
         ctx.check()
@@ -70,6 +78,18 @@ def generate(
         stage = "render"
         ctx.check()
         result.rendered = deps.renderer(model, result.plan, request.fill_options, ctx=ctx)
+        if model.program_mode:
+            artwork = result.rendered.source_text
+            prefix = model.preamble_text
+            if prefix:
+                prefix += "\n\n" if prefix.endswith("\n") else "\n\n\n"
+            result.rendered = replace(
+                result.rendered,
+                source_text=prefix + artwork,
+                artwork_source_text=artwork,
+                program_mode=True,
+                preamble_text=prefix,
+            )
 
         stage = "verification"
         ctx.check()

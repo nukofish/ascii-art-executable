@@ -186,6 +186,18 @@ def test_can_join_uses_the_whole_run(pairs, expected):
     assert source.can_join(run[:-1], run[-1], VerificationProfile()) is expected
 
 
+@pytest.mark.parametrize("pairs", [
+    (("PUNCTUATION", "."), ("PUNCTUATION", "."), ("PUNCTUATION", ".")),
+    (("PUNCTUATION", "?"), ("PUNCTUATION", "?"), ("PUNCTUATION", "(")),
+    (("PUNCTUATION", "/"), ("PUNCTUATION", "*")),
+    (("LITERAL", "0x1p"), ("PUNCTUATION", "+")),
+    (("IDENTIFIER", "数"), ("IDENTIFIER", "量")),
+])
+def test_can_join_checks_the_suffix_after_a_delimiter(pairs):
+    run = tokens(("IDENTIFIER", "name"), ("PUNCTUATION", ";"), *pairs)
+    assert source.can_join(run[:-1], run[-1], checked_run=True) is False
+
+
 def test_three_dots_and_empty_run():
     run = tokens(("PUNCTUATION", "."), ("PUNCTUATION", "."), ("PUNCTUATION", "."))
     assert source.can_join(run[:-1], run[-1], VerificationProfile()) is False

@@ -10,29 +10,40 @@
 <body>
 <header class="topbar"><a href="/" class="brand">code<span>art</span><span class="brand-tag">STUDIO</span></a><span class="local-badge"><i></i> Local workspace</span></header>
 <main>
-<section class="intro"><div><p class="eyebrow">SOURCE CODE, RESHAPED</p><h1>Give your code a new form.</h1><p class="lede">Turn a C11 function into a circle, a cat, or hollow CODE.<br>Keep its tokens. Check the result. Take the source with you.</p></div><div class="intro-art" aria-hidden="true"><pre>     /*======*/
+<section class="intro"><div><p class="eyebrow">SOURCE CODE, RESHAPED</p><h1>Give your code a new form.</h1><p class="lede">Arrange a complete C11 program as a circle, a cat, or hollow CODE.<br>Keep its behavior. Check the result. Take the source with you.</p></div><div class="intro-art" aria-hidden="true"><pre>     /*======*/
    /*==========*/
   /*============*/
    /*==========*/
      /*======*/</pre><span>CODE IS THE CANVAS</span></div></section>
 <form id="generator">
 <fieldset id="controls"><legend class="sr-only">Generation settings</legend>
-<label class="sample-control">START WITH<select id="sample"><option value="">Custom function</option></select></label>
+<label class="sample-control">START WITH<select id="sample"><option value="">Custom input</option></select></label>
 <label>SHAPE<select id="shape"><option value="circle">Circle</option><option value="cat">Cat</option><option value="code">Hollow CODE</option></select></label>
 <label>INITIAL SCALE<select id="scale"><option value="1">1× · automatic fit</option><option value="1.5">1.5×</option><option value="2">2×</option><option value="3">3×</option><option value="4">4×</option></select></label>
 <button class="primary" id="generate" type="submit">Generate artwork <span aria-hidden="true">↗</span></button>
 </fieldset>
+<p id="program-scope" hidden>Preprocessor sections are kept at the top. The remaining program is arranged together.</p>
 <p id="file-scope" hidden>Only the extracted function is verified, not the entire input program.</p>
-<div class="file-controls">
-<label><input id="file-mode" type="checkbox"> Extract from a complete C file</label>
+<label class="program-control"><input id="program-mode" type="checkbox" checked> Arrange a complete C program</label>
+<div class="file-controls" id="file-controls">
+<label><input id="file-mode" type="checkbox"> Extract one function from a complete C file</label>
 <button id="inspect-file" type="button">Find functions</button>
 <select id="function"><option value="">First eligible function</option></select>
 </div>
 <pre id="candidates" hidden></pre>
-<div class="run-status"><p id="status" role="status" aria-live="polite">Choose a sample or paste a complete function to begin.</p><button id="cancel" type="button" hidden>Cancel generation</button></div>
+<div class="run-status"><p id="status" role="status" aria-live="polite">Paste a complete C program or open a .c file.</p><button id="cancel" type="button" hidden>Cancel generation</button></div>
 <section class="workspace" aria-label="Source comparison">
-<div class="editor-panel"><div class="panel-top"><h2><span>01</span> Original source</h2><label class="file-button">Open .c file<input type="file" id="file" accept=".c,text/plain" class="sr-only"></label></div><label for="source" class="sr-only">C11 function source</label><textarea id="source" class="code" spellcheck="false" wrap="off" placeholder="int max2(int a, int b) {&#10;    return a > b ? a : b;&#10;}"></textarea><div class="panel-bottom"><span>C11 · ASCII</span><span id="input-kind">Custom input · behavior check requires a built-in sample</span></div></div>
-<div class="editor-panel output-panel"><div class="panel-top"><h2><span>02</span> Generated artwork</h2><span id="dimensions">AWAITING GENERATION</span></div><div id="empty" class="empty"><div class="empty-symbol" aria-hidden="true">{ · }</div><h3>Your code, in a different shape.</h3><p>The result will appear here, with each check<br>reported independently below.</p></div><pre id="output" class="code" tabindex="0" aria-label="Generated C11 source" hidden></pre><div class="panel-bottom"><span id="font-label">Roboto Mono · fixed character grid</span><span>Spaces preserved · no line wrapping</span></div></div>
+<div class="editor-panel"><div class="panel-top"><h2><span>01</span> Original source</h2><label class="file-button">Open .c file<input type="file" id="file" accept=".c,text/plain" class="sr-only"></label></div><label for="source" class="sr-only">C11 source</label><textarea id="source" class="code" spellcheck="false" wrap="off" placeholder="Paste your C code here"></textarea><div class="panel-bottom"><span id="input-encoding">C11 · UTF-8</span><span id="input-kind">Complete C program</span></div></div>
+<div class="editor-panel output-panel">
+  <div class="panel-top">
+    <h2><span>02</span> Generated artwork</h2>
+    <div class="output-tools"><span id="dimensions"></span><button type="button" id="copy-source" hidden>Copy code</button><span id="copy-feedback" class="sr-only" role="status"></span></div>
+  </div>
+  <div id="empty" class="empty"><p>Generate artwork to see the preview.</p></div>
+  <pre id="output-preamble" class="code" tabindex="0" aria-label="C preprocessor directives" hidden></pre>
+  <div id="artwork-preview" hidden><pre id="output" class="code" tabindex="0" aria-label="Generated artwork"></pre></div>
+  <div class="panel-bottom"><span id="font-label">Roboto Mono · fixed character grid</span><span>Spaces preserved · no line wrapping</span></div>
+</div>
 </section>
 </form>
 <section class="results" aria-label="Generation results">
@@ -42,7 +53,7 @@
 <div class="actions"><a id="download" class="download" hidden>Download .c source <span aria-hidden="true">↓</span></a><a id="report" hidden>Download run report</a><span id="export-note"></span></div>
 <div id="diagnostics" class="diagnostics" hidden></div>
 <details id="attempts"><summary>Layout attempts <span id="attempt-count"></span></summary><div class="table-scroll"><table><thead><tr><th>Scale</th><th>Grid</th><th>Token</th><th>Result</th><th>Seconds</th></tr></thead><tbody id="attempt-rows"></tbody></table></div></details>
-<details><summary>Environment &amp; supported input</summary><p>Generate from one self-contained C11 function, or extract a candidate from a complete file. Static local variables and <code>__func__</code> are supported. File extraction excludes <code>main</code> and checks that the candidate can compile on its own. Custom functions are compiled as object files. Only unchanged built-in samples enter behavior testing.</p><pre id="environment"></pre><p>Preview uses bundled Roboto Mono Regular under the SIL Open Font License. Cell height is twice its character width, matching the generator’s 0.5 cell aspect ratio.</p></details>
+<details><summary>Environment &amp; supported input</summary><p>Arrange a complete C11 translation unit or use a built-in function sample. Preprocessor directives and conditional sections are preserved at the top, while the remaining tokens are arranged together. The final complete source is checked for token integrity, geometry and compilation. User programs are not executed by the web app.</p><pre id="environment"></pre><p>Preview uses bundled Roboto Mono Regular under the SIL Open Font License. Cell height is twice its character width, matching the generator’s 0.5 cell aspect ratio.</p></details>
 </section>
 <footer><span>Code Art Studio</span><span>Source → layout → fill → verify</span></footer>
 </main>

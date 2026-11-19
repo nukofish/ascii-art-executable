@@ -83,7 +83,8 @@ ratio is 1.0.
 
 Cat head: an ellipse (`rx = 0.95`, `ry = 0.80`, centre slightly below the
 middle), two triangular ears whose tips reach the top edge, two elliptical eye
-holes and one nose hole. Holes punch through the silhouette, so the head stays a
+holes and one nose hole. The ear bases meet the head without protruding along
+its sides. Holes punch through the silhouette, so the head stays a
 single connected fillable region with three interior holes.
 
 ### `code`

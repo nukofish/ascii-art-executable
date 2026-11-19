@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import time
+from dataclasses import replace
 from threading import Event
 from time import monotonic
 
@@ -61,6 +63,48 @@ def always_join(run, nxt, profile):
 
 def never_join(run, nxt, profile):
     return False
+
+
+@pytest.mark.parametrize("count, height", ((40, 4), (26, 6)))
+def test_program_uses_smallest_requested_canvas_and_short_fill(count, height):
+    tokens = make_tokens([("identifier", "abc")] * count)
+    model = replace(model_for(tokens), program_mode=True)
+    options = LayoutOptions(base_height_rows=height)
+
+    def rectangle(shape, size, font, *, ctx):
+        return _rect_mask(40, size.height_rows)
+
+    plan = fit_layout(model, ShapeSpec("circle"), options,
+                      mask_builder=rectangle, join_checker=never_join, ctx=context())
+    assert plan.mask.height == height
+    assert {placement.row for placement in plan.placements} == set(range(height))
+    rendered = render_source(model, plan, FillOptions(), ctx=context())
+    internal_gaps = [
+        right.col - left.col - tokens[index].width
+        for index, (left, right) in enumerate(zip(plan.placements, plan.placements[1:]))
+        if left.row == right.row
+    ]
+    assert max(internal_gaps) <= len(" /*x*/ ")
+    if count == 40:
+        assert "/*" not in rendered.source_text
+    else:
+        fillers = re.findall(r"abc /\*(.)\*/ (?=abc)", rendered.source_text)
+        assert len(set(fillers)) >= 3
+
+
+def test_program_moves_a_token_to_break_consecutive_filler_rows():
+    widths = (12, 4, 4, 16)
+    mask = replace(
+        _rect_mask(16, 4),
+        allowed=tuple(tuple(col < width for col in range(16)) for width in widths),
+        spans=tuple(((0, width),) for width in widths),
+    )
+    tokens = make_tokens([("identifier", text) for text in ("abc", "b", "c", "longlonglong")])
+    model = replace(model_for(tokens), program_mode=True)
+    plan = fit_layout(model, ShapeSpec("circle"), LayoutOptions(base_height_rows=4),
+                      mask_builder=lambda *args, **kwargs: mask, join_checker=never_join,
+                      ctx=context())
+    assert [placement.row for placement in plan.placements] == [0, 1, 2, 3]
 
 
 # A small realistic C-like token set.
@@ -419,16 +463,7 @@ def test_layout_budget_is_not_reset_for_the_second_attempt():
 
 @requires_clang
 def test_default_layout_budget_fits_a_real_sized_program():
-    """The default budget must cover a normally sized function.
-
-    Slow test: about 5 s with the current ``can_join``, which re-lexes the
-    whole contiguous run on every check (layout is O(n^2)).  It walks the
-    default ``LayoutOptions()`` and the real ``analyze_source``/``can_join``,
-    reproducing the ~243-line program that used to fail with LAYOUT_TIMEOUT
-    under the old 5 s default.  The actual performance fix (incremental or
-    cached ``can_join``) is a separate layout item, not part of this budget
-    widening.
-    """
+    """Exercise the default budget with a large function and the public join checker."""
     lines = ["int big(int seed) {", "    int a = seed;", "    int b = 0;"]
     for i in range(120):
         lines += [f"    b = b + a * {i} + ({i} % 7);",
@@ -448,8 +483,6 @@ def test_default_layout_budget_fits_a_real_sized_program():
 
 
 def test_default_layout_budget_stays_at_sixty_seconds():
-    # Guard the widened default against an accidental revert to 5 s: a real
-    # 240-400 line function takes 5-8 s with the current, unoptimized can_join.
     assert LayoutOptions().layout_timeout_s == 60.0
 
 

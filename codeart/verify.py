@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from contextlib import contextmanager, nullcontext
+from dataclasses import replace
 from itertools import zip_longest
+import re
 from time import monotonic
 
 from ._verification_geometry import check_geometry
@@ -27,6 +29,7 @@ from .procutil import (
     DependencyUnavailable,
     WorkStopped,
     check_context,
+    run_command,
 )
 from .verification_fixtures import BUILTIN_FIXTURES, FixtureSelection
 
@@ -78,7 +81,11 @@ def _first_diff(expected, actual, ctx):
         else:
             reason = "KIND_OR_SPELLING"
         expected_loc = (
-            TokenLocation(left.kind, left.spelling, left.source_line, left.source_column)
+            TokenLocation(
+                left.kind, left.spelling,
+                getattr(left, "source_line", getattr(left, "line", None)),
+                getattr(left, "source_column", getattr(left, "column", None)),
+            )
             if left is not None else None
         )
         actual_loc = (
@@ -96,7 +103,8 @@ def _check_tokens(model, rendered, profile, ctx, report):
     lex_ctx = VerificationContext.within(ctx, profile.lex_timeout)
     try:
         tokens = []
-        for token in profile.lex_source(rendered.source_text, ctx=lex_ctx):
+        source_text = getattr(rendered, "artwork_source_text", None) or rendered.source_text
+        for token in profile.lex_source(source_text, ctx=lex_ctx):
             check_context(lex_ctx)
             if not token.is_comment:
                 tokens.append(token)
@@ -137,6 +145,103 @@ def _check_tokens(model, rendered, profile, ctx, report):
         location.line, location.column, {"index": diff.index, "reason": diff.reason},
     ))
     return None
+
+
+# Layout necessarily moves code to other lines, so __LINE__ (and macros such as
+# assert that expand it) would always differ, and the clock macros can change
+# between the two preprocessor runs. Neutralise them for the comparison only;
+# the rest of the expansion must still match exactly.
+_PREPROCESS_FLAGS = (
+    "-E", "-D__LINE__=0", "-D__DATE__=0", "-D__TIME__=0", "-D__TIMESTAMP__=0",
+    "-Wno-builtin-macro-redefined",
+)
+_LINE_MARKER = re.compile(r'^# (\d+) "((?:[^"\\]|\\.)*)"')
+
+
+def _preprocessed_tokens(source, profile, builds, compiler, ctx):
+    """Return expanded tokens whose lines refer to the given source text.
+
+    Tokens that come from included headers get line 0.
+    """
+    path = builds.root / "program.c"
+    path.write_text(source if source.endswith("\n") else source + "\n",
+                    encoding="utf-8", newline="")
+    result = run_command(
+        [compiler.path, *compiler.flags, *_PREPROCESS_FLAGS, str(path)],
+        cwd=builds.root, env=builds.env, ctx=ctx, timeout=profile.compile_timeout,
+    )
+    if result.returncode != 0:
+        raise BuildFailed(result)
+
+    # Blank out line markers and remember which source line each output line has.
+    lines = result.stdout.split("\n")
+    origins = []
+    in_source, source_line = False, 0
+    for index, line in enumerate(lines):
+        marker = _LINE_MARKER.match(line)
+        if marker:
+            in_source = marker.group(2) == str(path)
+            source_line = int(marker.group(1))
+            lines[index] = ""
+            origins.append(0)
+            continue
+        origins.append(source_line if in_source else 0)
+        source_line += 1
+
+    lex_ctx = VerificationContext.within(ctx, profile.lex_timeout)
+    return tuple(
+        replace(token, line=origins[token.line - 1] if token.line <= len(origins) else 0)
+        for token in profile.lex_source("\n".join(lines), ctx=lex_ctx)
+        if not token.is_comment
+    )
+
+
+def _check_program_preprocessing(model, rendered, profile, ctx, report):
+    """Ensure moving directives to the prefix leaves macro expansion unchanged."""
+    try:
+        with BuildSession() as builds:
+            compiler = builds.compiler_info(profile, ctx)
+            original = _preprocessed_tokens(
+                model.original_source, profile, builds, compiler, ctx,
+            )
+            generated = _preprocessed_tokens(
+                rendered.source_text, profile, builds, compiler, ctx,
+            )
+    except BuildFailed as exc:
+        report.token_status = CheckStatus.FAIL
+        report.diagnostics.append(Diagnostic(
+            ErrorCode.TOKEN_MISMATCH, "token",
+            "The generated program could not be preprocessed",
+            details={"stderr": exc.result.stderr},
+        ))
+        return False
+    except CommandTimedOut as exc:
+        raise StageError(Diagnostic(
+            ErrorCode.ANALYSIS_TIMEOUT, "token",
+            "Preprocessor comparison exceeded its time budget",
+        )) from exc
+    except DependencyUnavailable as exc:
+        raise StageError(Diagnostic(
+            ErrorCode.DEPENDENCY_UNAVAILABLE, "token", str(exc),
+        )) from exc
+    diff = _first_diff(original, generated, ctx)
+    if diff is None:
+        return True
+    report.token_status = CheckStatus.FAIL
+    report.first_diff = diff
+    # Point at the user's own source; preprocessed columns are not meaningful.
+    expected = diff.expected
+    line = expected.line if expected is not None and expected.line > 0 else None
+    found = diff.actual.spelling if diff.actual is not None else "end of program"
+    wanted = expected.spelling if expected is not None else "end of program"
+    report.diagnostics.append(Diagnostic(
+        ErrorCode.TOKEN_MISMATCH, "token",
+        "Moving the preprocessing lines to the top changed macro expansion: "
+        f"expected {wanted!r} but found {found!r} after the move",
+        line, None,
+        {"index": diff.index, "reason": diff.reason},
+    ))
+    return False
 
 
 def _compile(builds, mode, source, wrapper, profile, ctx, report):
@@ -262,10 +367,31 @@ def verify(model, plan, rendered, fixtures, profile, *, ctx) -> VerificationRepo
                 geometry="TOKEN_NOT_PASS", compile="TOKEN_NOT_PASS", behavior="TOKEN_NOT_PASS",
             )
             return report
+        if getattr(model, "program_mode", False) and report.token_status == CheckStatus.PASS:
+            report.token_status = CheckStatus.NOT_RUN
+            with _stage(report, stage, ctx):
+                if not _check_program_preprocessing(model, rendered, profile, ctx, report):
+                    report.skip_reasons.update(
+                        geometry="TOKEN_NOT_PASS", compile="TOKEN_NOT_PASS",
+                        behavior="TOKEN_NOT_PASS",
+                    )
+                    return report
+                report.token_status = CheckStatus.PASS
 
         stage = "geometry"
         with _stage(report, stage, ctx):
-            report.geometry_metrics, issues = check_geometry(model, plan, rendered, tokens, ctx)
+            artwork = rendered
+            artwork_source_text = getattr(rendered, "artwork_source_text", None)
+            if artwork_source_text is not None:
+                artwork = rendered.__class__(
+                    source_text=artwork_source_text,
+                    position_map=rendered.position_map,
+                    coverage=rendered.coverage,
+                    token_coverage=rendered.token_coverage,
+                    comment_coverage=rendered.comment_coverage,
+                    comment_cells=rendered.comment_cells,
+                )
+            report.geometry_metrics, issues = check_geometry(model, plan, artwork, tokens, ctx)
             report.geometry_status = CheckStatus.PASS
             if issues.reasons:
                 report.geometry_status = CheckStatus.FAIL
@@ -297,7 +423,11 @@ def verify(model, plan, rendered, fixtures, profile, *, ctx) -> VerificationRepo
         programs = None
         with session as builds:
             with _stage(report, stage, ctx):
-                artifact = _compile(builds, "object", rendered.source_text, "", profile,
+                mode = (
+                    "rendered" if getattr(model, "program_mode", False)
+                    and getattr(model, "has_main", False) else "object"
+                )
+                artifact = _compile(builds, mode, rendered.source_text, "", profile,
                                     ctx, report)
                 if artifact is not None:
                     if behavior_skip_reason is None:

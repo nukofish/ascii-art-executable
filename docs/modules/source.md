@@ -11,23 +11,53 @@ other without a separator. Nothing here chooses a shape, a size or a comment.
 | Name | Signature | Purpose |
 | --- | --- | --- |
 | `analyze_source` | `(text, profile=None, *, ctx=None) -> SourceModel` | Validate one self-contained C11 function; raise `StageError` with a shared `Diagnostic` on failure. |
-| `can_join` | `(run_tokens, next_token, profile=None) -> bool` | Re-lex the whole contiguous run plus the candidate and compare kinds and spellings. |
+| `analyze_program` | `(text, profile=None, *, ctx=None) -> SourceModel` | Validate a complete C11 translation unit and return its non-directive token stream with preprocessor sections recorded for the output prefix. |
+| `can_join` | `(run_tokens, next_token, profile=None, *, checked_run=False) -> bool` | Check whether adjoining tokens preserves their kinds and raw spellings. |
 | `lex_source` | `(text, *, ctx) -> tuple[LexedToken, ...]` | Raw token adapter E reuses for the generated source. |
 | `prepare_profile` | `(profile) -> VerificationProfile` | Bind A's lexer to the profile so E compares with the same lexer. |
 
-`codeart.source.__all__` contains exactly these four names. Import shared types
+`codeart.source.__all__` contains exactly these five names. Import shared types
 from `codeart.contracts`; never import `codeart._source_lexer` or
 `codeart._source_worker` from another owner's module.
 
 ## Input limits
 
 The single-function entry point accepts one self-contained definition and
-does not require `main`. The separate complete-file entry point excludes
-`main` from eligible extraction candidates. Parameters, local variables
+does not require `main`. The complete-program entry point accepts a translation
+unit with multiple definitions and keeps its directives and conditional
+regions in `SourceModel.preamble_text`. Parameters, local variables
 (including `static` and `static const`), `__func__`, `goto` labels and
-recursion are supported. Additional top-level declarations and dependencies
-on external functions or objects are rejected. Each rejection uses a shared
-`ErrorCode` and, when the position is known, a one-based line and column.
+recursion are supported in the arranged token stream. Each rejection uses a
+shared `ErrorCode` and, when the position is known, a one-based line and column.
+
+The table below describes the single-function entry point. Complete-program
+analysis also accepts directives, multiple definitions, global declarations
+and cross-function references. It moves directives and complete conditional
+regions into the prefix, then the pipeline compares preprocessed token streams
+before compiling the final program. Line splicing is accepted inside a
+preserved directive and rejected in arranged source. A `#pragma`, `#line` or
+`#undef` after ordinary code is rejected because moving it could change
+compiler state or macro scope. A conditional group (`#if`, `#ifdef`,
+`#ifndef`) that contains code is only moved when no code comes before it;
+later ones, including groups inside a function body, are rejected at the
+`#if` line. Moving such code would only be checked for the default macro
+configuration and could break a build with other `-D` options. Conditional
+groups that contain only directives may appear anywhere.
+The file must compile with available headers and dependencies. Macros that
+depend on directive placement can still change when moved to the prefix.
+Preprocessed token comparison and the final build catch changes to expansion
+or compilation.
+
+Complete-program input accepts printable UTF-8 text, including Chinese
+identifiers and string literals. Fullwidth and wide characters occupy two
+cells. Standalone combining marks and non-printable characters other than
+the permitted line endings and tabs are rejected. Original comments are
+accepted and treated as whitespace in the artwork. Comments in preserved
+preprocessor sections stay with those sections.
+
+Complete-program analysis and compilation use `-Wno-strict-prototypes` so
+definitions such as `void ensure_capacity() {}` and `int main() { return 0; }`
+are accepted with their original spellings. C syntax errors still fail.
 
 | Input | Result | Location |
 | --- | --- | --- |
@@ -60,7 +90,7 @@ Two details matter for the rest of the team:
 Macro names inside comments and string literals are ordinary text: they are
 lexed as `COMMENT` and `STRING_LITERAL`, so `"__LINE__"` and
 `/* __FILE__ */` are accepted. Escaped spellings such as `"a\tb"` keep their
-raw text and their width is `len(spelling)`.
+raw text. Token widths are measured in grid cells.
 
 ## Character and line rules
 
@@ -75,9 +105,14 @@ raw text and their width is `len(spelling)`.
 
 ## The `can_join` decision
 
-`can_join(run_tokens, next_token, profile)` concatenates the spellings of the
-current run and the candidate, re-lexes that text with the same flags, and
-compares the result with the expected `(kind, spelling)` pairs. Consequences:
+By default `can_join` re-lexes the complete run plus the candidate and compares
+the result with the expected `(kind, spelling)` pairs. The production pipeline
+sets `checked_run=True` because Clang has already classified the input tokens
+and layout builds the run one checked join at a time. In that case the lexer
+starts at the last standalone delimiter (`()[]{},;`) or at the start of the
+run if there is none. Keeping the delimiter lets different runs reuse the
+same cached suffix. A candidate delimiter can join directly unless it could
+complete a trigraph.
 
 - `f` + `(` joins; `a` + `)` joins; `)` + `{` joins.
 - `+` + `+`, `/` + `*`, `/` + `/`, `<` + `<`, `-` + `>` do not join: they would

@@ -38,6 +38,8 @@ def make_request(data):
     shape = data.get("shape", "circle")
     scale = data.get("scale", 1)
     sample = data.get("sample")
+    program_mode = data.get("program_mode", False)
+    file_mode = data.get("file_mode", False)
     if not isinstance(source, str) or not source.strip():
         raise ValueError("Enter a complete C11 function")
     if shape not in ("circle", "cat", "code"):
@@ -46,7 +48,11 @@ def make_request(data):
         raise ValueError("Initial scale must be between 1 and 4")
     if sample is not None and (not isinstance(sample, str) or sample not in BUILTIN_FIXTURES):
         raise ValueError("Unknown built-in sample")
-    fixtures = select_builtin(sample) if sample else None
+    if not isinstance(program_mode, bool) or not isinstance(file_mode, bool):
+        raise ValueError("Input mode must be a boolean")
+    if program_mode and file_mode:
+        raise ValueError("Choose whole-program mode or function extraction")
+    fixtures = select_builtin(sample) if sample and not program_mode else None
     # An edited sample becomes ordinary input. It cannot enter the execution stage.
     if fixtures and fixtures.fixture.source != source:
         fixtures = None
@@ -55,6 +61,7 @@ def make_request(data):
         layout_options=LayoutOptions(
             initial_scale=scale, font_metrics=FontMetrics(font_id=FONT_ID)),
         fixtures=fixtures,
+        program_mode=program_mode,
     )
 
 
@@ -149,10 +156,14 @@ class Jobs:
                 "input_source": (job["file_source"] if job["file_source"] is not None
                                  else job["request"].source_text),
                 "file_mode": job["file_source"] is not None,
+                "program_mode": job["request"].program_mode,
                 "function": job["function"],
                 "shape": job["request"].shape_spec.kind,
                 "scale": job["request"].layout_options.initial_scale,
-                "sample": job["request"].fixtures.fixture.name if job["request"].fixtures else None,
+                "sample": (
+                    job["request"].fixtures.fixture.name if job["request"].fixtures
+                    else "program" if job["request"].program_mode else None
+                ),
                 "result": result,
             }
 

@@ -9,7 +9,7 @@ Tests can pass compatible implementations in `PipelineDeps`.
 
 | Part | File | Interface |
 | --- | --- | --- |
-| A | `codeart/source.py` | `analyze_source(text, profile, *, ctx) -> SourceModel`<br>`can_join(run_tokens, next_token, profile) -> bool` |
+| A | `codeart/source.py` | `analyze_source(text, profile, *, ctx) -> SourceModel`<br>`analyze_program(text, profile, *, ctx) -> SourceModel`<br>`can_join(run_tokens, next_token, profile) -> bool` |
 | B | `codeart/shapes.py` | `build_mask(shape_spec, size_request, font_metrics, *, ctx) -> Mask` |
 | C | `codeart/layout.py` | `fit_layout(model, shape_spec, options, *, mask_builder, join_checker, ctx) -> LayoutPlan` |
 | D | `codeart/fill.py` | `render_source(model, plan, fill_options, *, ctx) -> RenderedCode` |
@@ -19,11 +19,18 @@ Tests can pass compatible implementations in `PipelineDeps`.
 
 - **A to C, D and E.** Keep the input in `SourceModel.original_source` and
   store normalized text separately. Number effective tokens in source order,
-  preserve their original spelling and use the spelling length as their
-  width. `can_join` takes the entire contiguous token run and one candidate.
+  preserve their original spelling and measure their width in grid cells.
+  `can_join` takes the entire contiguous token run and one candidate.
   Provide a raw lexer callback `lex_source(text, *, ctx)` that yields
   `LexedToken` values, including comments. A and E share one
   `VerificationProfile`.
+- **Complete-program mode.** `analyze_program` stores all non-prefix tokens in
+  one ordered `SourceModel`. Directives and complete conditional regions are
+  retained in `preamble_text`. D renders the canvas and the pipeline prepends
+  the preserved text before passing the complete `RenderedCode.source_text`
+  to E and F. `artwork_source_text` identifies the canvas used by E's token and
+  geometry checks. E also compares preprocessed token streams
+  and compiles the final complete source, linking when `main` is present.
 - **B to C, E and F.** The contract re-exports B's existing `ShapeSpec`,
   `SizeRequest`, `FontMetrics` and `Mask` classes. The default cell
   width-to-height ratio is 0.5; `FontMetrics.cell_aspect` is derived from
@@ -53,16 +60,22 @@ Tests can pass compatible implementations in `PipelineDeps`.
 - **Coordinates.** Grid rows, grid columns, span offsets and token indices
   are zero-based. Source lines and columns shown to users are one-based.
 
-## Optional complete-file prepass
+## Optional complete-file function extraction
 
 `codeart.prepass` is an F-layer convenience, not a pipeline stage and not a
 member of `PipelineDeps`. It locates candidate definitions in a complete C
 file and asks A to validate each extracted text; only the selected text is
-passed to `generate()`. `generate()` and A still accept exactly one
-self-contained function. The prepass was accepted on 2026-11-10 as a v1.5
+passed to the single-function path of `generate()`. The prepass was accepted
+on 2026-11-10 as a v1.5
 extension; the v1.4 acceptance path is unchanged. The
 prepass result is attached to CLI/web reports as `prepass`; it is not part of
 `GenerationRequest`/`GenerationResult` contracts.
+
+Complete-program mode is a separate `GenerationRequest.program_mode` path. It
+does not select a function and does not use behavior fixtures. Conditional
+blocks and preprocessing directives are kept together at the output prefix.
+The layout selects a mask from the original tokens, then uses spare room on
+that mask for short filler gaps where needed.
 
 ## Generation result status
 
