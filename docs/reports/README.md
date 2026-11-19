@@ -19,6 +19,8 @@ Do not overwrite an earlier run when the source or revision differs.
 - [Part D detailed report](D_report.md)
 - [Part E verification completion checklist](E_verify.md)
   and [v1.5 budget and coverage decision](E_verify.md#v15-budget-and-coverage-decision)
+- [Whole-program acceptance samples](whole_program/README.md)
+  and [whole-program budgets and coverage](E_verify.md#whole-program-budgets-and-coverage)
 - [Part F original checks](F_acceptance.md)
 - [Part F after E integration](F_after_E.md)
 - [Part F CI and bilingual documentation follow-up](F_delivery.md)

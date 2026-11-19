@@ -1,0 +1,235 @@
+{
+  "verified": true,
+  "status": "OK",
+  "checks": {
+    "token": {
+      "status": "PASS",
+      "reason": null
+    },
+    "geometry": {
+      "status": "PASS",
+      "reason": null
+    },
+    "compile": {
+      "status": "PASS",
+      "reason": null
+    },
+    "behavior": {
+      "status": "NOT_RUN",
+      "reason": "NO_FIXTURE"
+    }
+  },
+  "diagnostics": [],
+  "attempt_history": [
+    {
+      "scale": 1.0,
+      "width": 178,
+      "height": 32,
+      "failure_token_index": null,
+      "reason": null,
+      "elapsed_s": 0.511647819000018
+    }
+  ],
+  "layout": {
+    "width": 178,
+    "height": 32,
+    "scale": 1.0,
+    "attempts": 1
+  },
+  "font_id": "Roboto Mono Regular",
+  "cell_aspect": 0.5,
+  "code_fill_ratio": 0.336783822821377,
+  "code_fill_warning": null,
+  "coverage": {
+    "total": 0.8115069812229176,
+    "token": 0.336783822821377,
+    "comment": 0.47472315840154067,
+    "comment_cells": {
+      "block": 1742,
+      "line": 230
+    }
+  },
+  "source_text": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#define MAX_STUDENTS 64\n#define SUBJECTS 3\n\n\nstruct /*(*/ student /*:*/ { /*&*/ char /*.*/ name /*:*/ [ /*&*/ 32 /*)*/ ];int /*.*/ scores /*+*/ [ /*:*/ SUBJECTS /*=*/ ] /*-*/ ;int /*x*/ total /*(*/ ; /*x*/ }; /*-*/ static\nconst /*&*/ char /*.*/ * /*)*/ const /*.*/ subject_names /*.*/ [ /*)*/ SUBJECTS /*+*/ ] /*:*/ = /*&*/ { /*(*/ \"\u8bed\u6587\" /*.*/ , /*)*/ \"\u6570\u5b66\" /*:*/ , /*&*/ \"\u82f1\u8bed\" //o+-x=()&.:o+-x=()\n} /*)*/ ;static /*o*/ int /*o*/ by_total_desc /*o*/ ( /*.*/ const /*o*/ void /*+*/ * /*:*/ left /*o*/ , /*.*/ const /*o*/ void /*+*/ * /*:*/ right /*+*/ ) /*:*/ { //&.:o+-x=()&.:\nconst struct /*o*/ student /*=*/ * /*-*/ a /*o*/ = /*.*/ left /*:*/ ;const /*-*/ struct /*(*/ student /*:*/ * /*&*/ b /*(*/ = /*x*/ right /*(*/ ;if /*(*/ (a /*=*/ -> /*x*/ total\n!= /*x*/ b                          ->total /*=()&.:o+-*/                     ){ /*+*/ return                            /*+-x*/ b->                                       //+-x=(\ntotal- /*o+-*/                      a /*+*/ ->total /*(*/                       ;}return /**/                            /*=()&.:o+-x*/                                    strcmp\n( /*.*/ a /**/                      ->name /*:*/ ,b /*.*/                      ->name /*-x=*/                                );} /*()*/                                    static\nint           /*x=()&.:o+-x=()&.:o*/       /*-x=*/       read_students /*o*/ (         struct       /*:o+-x=(*/ student         /*&.:*/           *students /*(*/ , //x=()&.:o+-x=\nint           capacity /*()&.:o+-x*/        ){           int count /*:o+-x=(*/         =0           ;while /*:*/ ( /*&.*/       count         /*=(*/ <capacity /*+*/ ) //:o+-x=()&\n{ /*&*/       struct /*)*/ student         /*.:o*/       /*-*/ *s= /*-*/ &           students       /*()&.:o+*/ [count          /*x=(*/        ]; /*+*/ if(scanf /*)*/ ( //=()&.:o\n/*.:o*/       \"%31s %d %d %d\" /*.:*/       /*+-x*/       /*(*/ ,s /*=*/ ->name       /*x=()*/       ,&s-> /*=*/ scores          /*)&.*/           [0], /*:*/ &s /*.*/ ->scores //x\n[ /*x*/       /**/ 1],& /*(*/ s-> /*(*/ scores           /*.:*/ [2] /*:*/ )!=            4)           {break /*o*/ ; /**/        }s           ->total /*+*/ = /*:*/ 0; /*.*/ for\n( /*)*/       int i= /*(*/ 0 /*x*/ ;i<SUBJECTS           /*+-x=()&*/ ;i++ /**/          ){           s->total /*=()&.:o*/          +=           s /*o*/ ->scores /*(*/ [i /*=*/ ]\n;} /**/       count /*&*/ ++; /*&*/ }return /*+-*/       /*=()*/ count /*.:o*/         ;}           static /*=*/ char           /*()&*/        band /*(*/ ( /*x*/ int score //:o+-\n){ /**/         return /*x*/ score /*(*/ >= /*=(*/           90?'A' /*.:o+-x*/       :score         /*o+-x=*/ >=80 /*()*/        ?'B'                               /**/ : score\n>= /**/       /*&.:*/ 70 /*.*/ ?'C': score /*)&.*/       /*o+*/ >=60 /*-*/ ?          'D'            :'F' /*:*/ ;} /*.:*/       int                                 main /*-*/ (\nvoid          /**/ ){ static /*(*/ struct /*.:o+*/       /*x=()&*/ student           /*+-x=*/         students /*&.:o+-*/           [                               MAX_STUDENTS\n] /*+*/       /*x=()&.:o+-x=*/ ;int /*(*/ count          /*)&.*/ = /*)&.:o+-*/       /*=()&*/       read_students /*x*/ (       /*&.:*/                             students //-x=\n, /*=*/       MAX_STUDENTS /*:*/ ) /*&.:o+-x=()&*/         ;if( /*)*/ count          /*&.:o*/       == /*(*/ 0){puts /**/       /**/ (         \"\u6ca1\u6709\u6570\u636e\" /*)*/ ) /*=*/ ; //-x=()&\nreturn        /*:o+-x*/ 1;} qsort /*:*/ ( /*&.:o*/        students /*-x=()&.*/          ,(           size_t /*x*/ ) /*+*/        count        /*&.:*/ , sizeof //=()&.:o+-x=()&.:o\n/*.:o*/       students[0] /*=*/ , by_total_desc          /*()&.:o+-x=()&.:o+*/         );           puts /*x*/ ( /*+-x=*/       /*)&.*/       \"\u6392\u540d \u59d3\u540d \u603b\u5206 \u7b49\u7ea7\" //-x=()&.:o+-x\n) /*x*/       /*()&*/ ;for /*.*/ (          int             i= /*=*/ 0;i <           count          /*+*/ ; /*:*/ i++){         /*:o+*/       printf /*o*/ ( \"%2d %-8s %3d %c\\n\"\n, /*)*/       /*.:o+-x=()&.:o+-x=(*/       /*&.:*/          i +1, /*o+-x=()&*/       students       /*=()&*/ [i]. /*.:o*/       name              , students /*+*/ [ /*:*/ i //&.:\n]. /**/       total /*&*/ ,band /**/       /*o+-*/       (students /*=()&.:o*/       /**/ [         i]. /*+*/ total /*x*/         /           SUBJECTS /*.*/ ) /*)*/ );} /*)*/ for\n( /*-*/         int j /*-*/ = 0;            j<           SUBJECTS /*)&.:o+-x*/         ;j           ++ /*x*/ ){int /*()*/       sum            =0, /*&*/ best /*.*/ = 0,bands //=(\n[ /*(*/ 5 /**/                       ]={0 /*(*/ }; /*=(*/                     for( int /*o+*/                               i=0 ; /*x*/                                     i< //.\ncount /*-x=(*/                      ;i++ /*&*/ ){int /**/                     /*=*/ score                                /**/ = /*=()*/                                    //&.:o+\nstudents[ /**/                      i]. scores /*)&.:o+*/                     /**/ [ j]; /**/                              sum+= /*.:*/                                      score\n; /*=*/ best /*(*/ = /*x*/ score /*(*/ > best /*.*/ ? /*)*/ score /*.*/ : /*)*/ best; /*.*/ bands /*o*/ [strchr /*=*/ ( /*-*/ \"ABCDF\" /*)*/ , /*=*/ band /*(*/ ( /*x*/ score //()&\n) /*&*/ ) /*(*/ - \"ABCDF\" /*+*/ ]++ /*+*/ ;}printf /*)*/ ( /*=*/ \"%s \u5e73\u5747 %d.%02d \u6700\u9ad8 %d \u5206\u6bb5 A%d B%d C%d D%d F%d\\n\" //x=()&.:o+-x=()&.:o+-x=()&.:o+-x=()&.:o+-x=()&.:o+-x=()&.:o\n, /*o*/ subject_names /*o*/ [ /*.*/ j /*)*/ ] /*=*/ , /*-*/ sum /*-*/ / /*o*/ count /*-*/ , /*o*/ sum /*o*/ * /*.*/ 100 /*.*/ / /*)*/ count /*.*/ % /*)*/ 100 /*)*/ , //=()&.:o+-x\nbest /*)*/ ,bands /*:*/ [ /*&*/ 0] /*)*/ ,bands /*:*/ [1] /*:*/ ,bands /*-*/ [ /*o*/ 2],bands /*(*/ [ /*x*/ 3] /*-*/ ,bands /*(*/ [ /*x*/ 4] /*-*/ );}return /*.*/ 0 /*)*/ ;} //()\n",
+  "program_mode": true,
+  "preamble_text": "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#define MAX_STUDENTS 64\n#define SUBJECTS 3\n\n\n",
+  "artwork_character_widths": {
+    "\u7ea7": 2,
+    "\u6700": 2,
+    "\u7b49": 2,
+    "\u5e73": 2,
+    "\u9ad8": 2,
+    "\u6709": 2,
+    "\u8bed": 2,
+    "\u6570": 2,
+    "\u82f1": 2,
+    "\u5206": 2,
+    "\u540d": 2,
+    "\u5747": 2,
+    "\u6bb5": 2,
+    "\u6ca1": 2,
+    "\u5b66": 2,
+    "\u636e": 2,
+    "\u6587": 2,
+    "\u6392": 2,
+    "\u59d3": 2,
+    "\u603b": 2
+  },
+  "verification": {
+    "token_status": "PASS",
+    "geometry_status": "PASS",
+    "compile_status": "PASS",
+    "behavior_status": "NOT_RUN",
+    "geometry_metrics": {
+      "kind": "code",
+      "cols": 178,
+      "rows": 32,
+      "cell_aspect": 0.5,
+      "bbox": {
+        "cols": 178,
+        "rows": 32,
+        "ratio": 2.78125
+      },
+      "allowed_cells": 4154,
+      "spans_total": 172,
+      "rows_with_multiple_spans": 24,
+      "eye_cells": {
+        "left": 0,
+        "right": 0
+      },
+      "nose_cells": 0,
+      "ear_gap_rows": 0,
+      "boundary_cells": {},
+      "holes": [
+        {
+          "cells": 66,
+          "centroid": {
+            "row": 5.0,
+            "col": 24.5
+          }
+        },
+        {
+          "cells": 63,
+          "centroid": {
+            "row": 5.0,
+            "col": 67.0
+          }
+        },
+        {
+          "cells": 294,
+          "centroid": {
+            "row": 15.5,
+            "col": 102.0
+          }
+        },
+        {
+          "cells": 430,
+          "centroid": {
+            "row": 15.5,
+            "col": 148.25116279069766
+          }
+        },
+        {
+          "cells": 126,
+          "centroid": {
+            "row": 15.5,
+            "col": 10.0
+          }
+        },
+        {
+          "cells": 28,
+          "centroid": {
+            "row": 8.5,
+            "col": 39.0
+          }
+        },
+        {
+          "cells": 126,
+          "centroid": {
+            "row": 15.5,
+            "col": 53.0
+          }
+        },
+        {
+          "cells": 126,
+          "centroid": {
+            "row": 15.5,
+            "col": 81.0
+          }
+        },
+        {
+          "cells": 126,
+          "centroid": {
+            "row": 15.5,
+            "col": 124.0
+          }
+        },
+        {
+          "cells": 28,
+          "centroid": {
+            "row": 22.5,
+            "col": 39.0
+          }
+        },
+        {
+          "cells": 66,
+          "centroid": {
+            "row": 26.0,
+            "col": 24.5
+          }
+        },
+        {
+          "cells": 63,
+          "centroid": {
+            "row": 26.0,
+            "col": 67.0
+          }
+        }
+      ],
+      "code_stroke_cells": 1542,
+      "outside_canvas_cells": 0,
+      "outside_mask_cells": 0,
+      "out_of_bounds_cells": 0,
+      "hole_leakage_cells": 0,
+      "coverage": 0.8115069812229176,
+      "token_coverage": 0.336783822821377,
+      "comment_coverage": 0.47472315840154067,
+      "comment_cells": {
+        "block": 1742,
+        "line": 230
+      },
+      "ear_coverage": {}
+    },
+    "first_diff": null,
+    "diagnostics": [],
+    "skip_reasons": {
+      "behavior": "NO_FIXTURE"
+    },
+    "durations": {
+      "token": 0.37572462500008896,
+      "geometry": 0.004674593000004279,
+      "compile": 0.09070857500000784
+    },
+    "compiler": {
+      "path": "/usr/bin/clang",
+      "version": "Ubuntu clang version 18.1.3 (1ubuntu1)\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin",
+      "flags": [
+        "-std=c11",
+        "-pedantic-errors",
+        "-Wno-strict-prototypes",
+        "-resource-dir",
+        "/usr/lib/llvm-18/lib/clang/18"
+      ],
+      "_fingerprint": [
+        65024,
+        220829,
+        140592,
+        1716798380000000000
+      ]
+    },
+    "behavior_cases_compared": 0
+  },
+  "revision": {
+    "commit": "44c48e7d6e6c5c0da227e377774349761697be73",
+    "dirty": false
+  }
+}
