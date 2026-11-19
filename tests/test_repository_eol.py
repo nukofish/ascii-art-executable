@@ -30,3 +30,13 @@ def test_compared_text_files_check_out_as_lf():
         assert (ROOT / path).is_file(), path
         assert attributes[path, "text"] == "auto", path
         assert attributes[path, "eol"] == "lf", path
+
+
+def test_compared_text_files_are_lf_on_disk():
+    # The attributes only apply to files Git writes after they took effect. A
+    # clone made earlier with core.autocrlf=true keeps CRLF copies; refresh it
+    # as docs/windows.md describes.
+    for path in COMPARED:
+        assert b"\r\n" not in (ROOT / path).read_bytes(), (
+            f"{path} has CRLF line endings; see 'Common problems' in docs/windows.md"
+        )

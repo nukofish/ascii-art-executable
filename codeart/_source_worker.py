@@ -161,23 +161,36 @@ _LEX_UNITS = {}
 
 def _lex_unit(clang, filename, flags, text):
     key = tuple(flags)
-    tu = _LEX_UNITS.get(key)
-    if tu is not None:
+    tu = _LEX_UNITS.pop(key, None)
+    if tu is not None and _reparse(clang, tu, filename, text):
+        _LEX_UNITS[key] = tu
+        return tu
+    # A unit that failed to reparse is unusable; parse a fresh one.
+    tu = _index().parse(
+        filename, args=list(flags), unsaved_files=[(filename, text)],
+        options=clang.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD,
+    )
+    if _reparse_supported(clang):
+        _LEX_UNITS[key] = tu
+    return tu
+
+
+def _reparse_supported(clang):
+    # Reparsing uses two private names of the clang bindings. Bindings that
+    # lack them fall back to a fresh parse per request, as before.
+    return hasattr(clang, "_CXUnsavedFile") and hasattr(clang.conf.lib, "clang_reparseTranslationUnit")
+
+
+def _reparse(clang, tu, filename, text):
+    try:
         data = text.encode("utf-8")
         unsaved = (clang._CXUnsavedFile * 1)()
         unsaved[0].name = filename.encode("utf-8")
         unsaved[0].contents = data
         unsaved[0].length = len(data)
-        if clang.conf.lib.clang_reparseTranslationUnit(tu, 1, unsaved, 0) == 0:
-            return tu
-        # libclang leaves a unit that failed to reparse unusable.
-        del _LEX_UNITS[key]
-    tu = _index().parse(
-        filename, args=list(flags), unsaved_files=[(filename, text)],
-        options=clang.TranslationUnit.PARSE_DETAILED_PROCESSING_RECORD,
-    )
-    _LEX_UNITS[key] = tu
-    return tu
+        return clang.conf.lib.clang_reparseTranslationUnit(tu, 1, unsaved, 0) == 0
+    except AttributeError:
+        return False
 
 
 def process(request):

@@ -119,6 +119,12 @@ the run if there is none. Keeping the delimiter lets different runs reuse the
 same cached suffix. A candidate delimiter can join directly unless it could
 complete a trigraph.
 
+Join checks always lex with `-ftrigraphs` added after the profile's flags.
+Trigraphs are part of ISO C, but Clang turns them off for MSVC targets (the
+default on Windows) and in GNU modes, where `?` + `?` + `(` would lex as three
+tokens. The generated source must keep its meaning under a strict C11 compiler,
+which reads `??(` as `[`, so such runs are rejected on every platform.
+
 - `f` + `(` joins; `a` + `)` joins; `)` + `{` joins.
 - `+` + `+`, `/` + `*`, `/` + `/`, `<` + `<`, `-` + `>` do not join: they would
   form one token.
@@ -128,7 +134,12 @@ complete a trigraph.
 
 Results and prefix verdicts are cached in the parent process by expected
 tokens, compiler flags and lexer timeout. Cache misses share one serialized child (`LexWorker`) with a
-single libclang index, bounded wait and a kill-and-restart path. C still checks
+single libclang index, bounded wait and a kill-and-restart path. The child keeps
+one translation unit per flag set and reparses it for each request instead of
+parsing a new one, which skips the compiler driver's toolchain discovery (the
+MSVC lookup on Windows) and saves about a third of the lexing time on Linux. A
+unit that fails to reparse is replaced, and bindings without the private
+reparse entry points fall back to a fresh parse per request. C still checks
 its own context around every join decision; `can_join` itself is a local lexical
 helper, not a schedulable stage.
 
@@ -142,7 +153,9 @@ cross-owner import returns, or if `codeart.procutil.__all__` loses a name A uses
 
 All children start in their own session on POSIX, run under the caller's
 `RunContext`, and are killed and reaped by the caller on cancellation or
-timeout. The lexer child never outlives the parent: `LexWorker` registers an
+timeout. On Windows, `run_command` starts each child suspended, places it in its
+own job object and only then lets it run, so `stop_process` also ends anything a
+wrapper such as a `.cmd` compiler shim started. The lexer child never outlives the parent: `LexWorker` registers an
 `atexit` close and reaps a hung worker before starting the next one.
 
 ## Budget and cancellation

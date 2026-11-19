@@ -55,24 +55,42 @@ def check_context(ctx) -> None:
         raise WorkStopped("PIPELINE_TIMEOUT")
 
 
-class _WindowsJob:
-    """A job object holding one child and every process it starts.
+_CREATE_SUSPENDED = 0x00000004
+_win32 = None
 
-    TerminateProcess stops only the child. A wrapper such as a .cmd compiler
-    shim leaves descendants that keep the pipes open, so `run_command` puts
-    each child in a job and `stop_process` ends the whole job at once.
-    """
 
-    def __init__(self, proc):
+def _win32_api():
+    """Bind the Win32 calls once; later job objects only make the calls."""
+    global _win32
+    if _win32 is None:
         import ctypes
         from ctypes import wintypes
+        from types import SimpleNamespace
 
-        self._kernel32 = kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
         kernel32.CreateJobObjectW.restype = wintypes.HANDLE
         kernel32.CreateJobObjectW.argtypes = (wintypes.LPVOID, wintypes.LPCWSTR)
         kernel32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
         kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
         kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        ntdll = ctypes.WinDLL("ntdll")
+        ntdll.NtResumeProcess.restype = ctypes.c_long
+        ntdll.NtResumeProcess.argtypes = (wintypes.HANDLE,)
+        _win32 = SimpleNamespace(kernel32=kernel32, ntdll=ntdll)
+    return _win32
+
+
+class _WindowsJob:
+    """A job object holding one child and every process it starts.
+
+    TerminateProcess stops only the child. A wrapper such as a .cmd compiler
+    shim leaves descendants that keep the pipes open, so `run_command` starts
+    each child suspended, puts it in a job before it runs, and `stop_process`
+    ends the whole job at once.
+    """
+
+    def __init__(self, proc):
+        self._kernel32 = kernel32 = _win32_api().kernel32
         self.handle = kernel32.CreateJobObjectW(None, None)
         if self.handle and not kernel32.AssignProcessToJobObject(self.handle, int(proc._handle)):
             self.close()
@@ -120,14 +138,21 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
             args, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             start_new_session=(os.name == "posix"),
+            # On Windows the child waits until it is in its job object, so
+            # nothing it starts can escape the job.
+            creationflags=_CREATE_SUSPENDED if os.name == "nt" else 0,
         )
     except OSError as exc:
         raise DependencyUnavailable(str(exc)) from exc
     job = None
     if os.name == "nt" and isinstance(getattr(proc, "_handle", None), int):
-        # The child joins the job a moment after it starts, before a wrapper
-        # such as cmd.exe has had time to start a compiler of its own.
-        job = proc._codeart_job = _WindowsJob(proc)
+        try:
+            job = proc._codeart_job = _WindowsJob(proc)
+        except Exception:
+            # Without a job, stop_process still ends the child itself.
+            job = None
+        finally:
+            _win32_api().ntdll.NtResumeProcess(int(proc._handle))
     try:
         return _wait_for(proc, args, ctx, deadline, real_deadline)
     finally:
