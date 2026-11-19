@@ -34,12 +34,36 @@ from fixtures.verification_reports import make_verifier_stub
 
 CLANG = shutil.which("clang")
 requires_clang = pytest.mark.skipif(CLANG is None, reason="Clang is required")
-# Clang 20 and earlier separate the fields with tabs and put flags such as
-# [StartOfLine] before Loc=; Clang 21 and later pad with spaces and put them after.
+# Clang 20 and earlier separate the fields with tabs, put flags such as
+# [StartOfLine] before Loc= and print spellings raw. Clang 21 and later pad
+# with spaces, put the flags after Loc= and escape spellings (\\, \t, \n,
+# \" and three-digit octal), so a newline no longer appears inside a record.
 _RAW_TOKEN = re.compile(
     r"(\w+)[ \t]+'(.*?)'[ \t]+(?:\[\w+\][ \t]*)*Loc=<<stdin>:(\d+):(\d+)>[^\n]*\n",
     re.DOTALL,
 )
+_ESCAPE = re.compile(r'\\(\\|t|n|"|[0-7]{3})')
+_UNESCAPED = {"\\": "\\", "t": "\t", "n": "\n", '"': '"'}
+
+
+def parse_raw_tokens(dump):
+    """Parse `clang -Xclang -dump-raw-tokens` output from Clang 18 through 23."""
+    escaped = "\t" not in dump
+    tokens = []
+    offset = 0
+    for match in _RAW_TOKEN.finditer(dump):
+        assert match.start() == offset, dump
+        offset = match.end()
+        kind, spelling, line, column = match.groups()
+        if escaped:
+            spelling = _ESCAPE.sub(
+                lambda m: _UNESCAPED.get(m.group(1)) or chr(int(m.group(1), 8)), spelling,
+            )
+        if kind == "unknown" and spelling.isspace():
+            continue
+        tokens.append(LexedToken(kind, spelling, int(line), int(column), kind == "comment"))
+    assert offset == len(dump), dump
+    return tokens
 
 
 def clang_lex_for_test(source, *, ctx):
@@ -50,18 +74,32 @@ def clang_lex_for_test(source, *, ctx):
         input=source.encode("utf-8"), capture_output=True, check=True,
         timeout=ctx.remaining_s(),
     )
-    stderr = result.stderr.decode("utf-8").replace("\r\n", "\n")
-    tokens = []
-    offset = 0
-    for match in _RAW_TOKEN.finditer(stderr):
-        assert match.start() == offset, stderr
-        offset = match.end()
-        kind, spelling, line, column = match.groups()
-        if kind == "unknown" and spelling.isspace():
-            continue
-        tokens.append(LexedToken(kind, spelling, int(line), int(column), kind == "comment"))
-    assert offset == len(stderr), stderr
-    return tokens
+    return parse_raw_tokens(result.stderr.decode("utf-8").replace("\r\n", "\n"))
+
+
+@pytest.mark.parametrize("dump", [
+    # Clang 18 and 20 layout.
+    "int 'int'\t [StartOfLine]\tLoc=<<stdin>:1:1>\n"
+    "unknown ' '\t\tLoc=<<stdin>:1:4>\n"
+    "identifier 's'\t\tLoc=<<stdin>:1:5>\n"
+    "unknown '\n  '\t\tLoc=<<stdin>:1:6>\n"
+    "string_literal '\"a\\n\"'\t [StartOfLine]\tLoc=<<stdin>:2:3>\n"
+    "semi ';'\t\tLoc=<<stdin>:2:8>\n"
+    "unknown '\n'\t\tLoc=<<stdin>:2:9>\n",
+    # Clang 21 and later layout, as printed by LLVM 23.1.6 on Windows.
+    "raw_identifier   'int'                           Loc=<<stdin>:1:1>     [StartOfLine]\n"
+    "unknown          ' '                             Loc=<<stdin>:1:4>    \n"
+    "raw_identifier   's'                             Loc=<<stdin>:1:5>    \n"
+    "unknown          '\\015\\n  '                    Loc=<<stdin>:1:6>    \n"
+    "string_literal   '\\\"a\\\\n\\\"'                     Loc=<<stdin>:2:3>     [StartOfLine]\n"
+    "semi             ';'                             Loc=<<stdin>:2:8>    \n"
+    "unknown          '\\n'                           Loc=<<stdin>:2:9>    \n",
+], ids=["clang-20", "clang-23"])
+def test_raw_token_dump_parses_in_both_clang_layouts(dump):
+    tokens = parse_raw_tokens(dump)
+    assert [(token.spelling, token.line, token.column) for token in tokens] == [
+        ("int", 1, 1), ("s", 1, 5), ('"a\\n"', 2, 3), (";", 2, 8),
+    ]
 
 
 @dataclass(frozen=True)
