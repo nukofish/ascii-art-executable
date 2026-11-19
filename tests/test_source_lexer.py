@@ -77,10 +77,12 @@ def test_lex_requests_reuse_one_unit_per_flag_set(monkeypatch):
     assert reused[0] == ["a", "+", "+", "b"]
     assert reused[4] == ["a", "++", "+", "b"]
 
-    # A different flag set gets its own unit and its own lexing rules.
+    # A different flag set gets its own unit and its own lexing rules. Clang's
+    # default for trigraphs depends on the target, so set it both ways.
     assert spellings("??(", strict + ["-ftrigraphs"]) == ["??("]
-    assert spellings("??(", strict) == ["??("]
-    assert len(worker._LEX_UNITS) == 2
+    assert spellings("??(", strict + ["-fno-trigraphs"]) == ["?", "?", "("]
+    assert spellings("??(", strict + ["-ftrigraphs"]) == ["??("]
+    assert len(worker._LEX_UNITS) == 3
 
 
 def test_lex_unit_that_fails_to_reparse_is_replaced(monkeypatch):

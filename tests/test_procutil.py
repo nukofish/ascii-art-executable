@@ -76,7 +76,9 @@ def test_frozen_clock_stops_and_reaps_real_child(
 
     def track_child(*args, **kwargs):
         child = popen(*args, **kwargs)
-        children.append(child)
+        # On Windows stop_process runs taskkill to stop the child's tree.
+        if child.args[0] != "taskkill":
+            children.append(child)
         return child
 
     monkeypatch.setattr(procutil.subprocess, "Popen", track_child)
