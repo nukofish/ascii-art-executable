@@ -382,11 +382,49 @@ def _can_join_cached(expected, flags, timeout):
     return tuple((token["kind"], token["spelling"]) for token in reply["tokens"]) == expected
 
 
+def _join_step(expected, flags, timeout):
+    """Check the last token of `expected`, assuming everything before it lexes as listed."""
+    last_kind, last_spelling = expected[-1]
+    # An appended delimiter is also independent, except when a parenthesis
+    # could complete a C trigraph (??( or ??)).
+    if (last_kind == "PUNCTUATION" and last_spelling in _JOIN_BOUNDARIES
+            and not (last_spelling in "()" and expected[-2][1].endswith("?"))):
+        return True
+
+    # A standalone delimiter in the checked run cannot start a longer C token.
+    # Keep it in the suffix and let Clang check everything from there onward.
+    for index in range(len(expected) - 2, -1, -1):
+        kind, spelling = expected[index]
+        if kind == "PUNCTUATION" and spelling in _JOIN_BOUNDARIES:
+            expected = expected[index:]
+            break
+    return _can_join_cached(expected, flags, timeout)
+
+
+@lru_cache(maxsize=4096)
+def _run_lexes_as(expected, flags, timeout):
+    """Whether the concatenated run lexes to exactly `expected`.
+
+    The first pair is checked by Clang in full. Each longer run is then its
+    verified prefix plus one `_join_step`, so a layout that grows a run token by
+    token reuses every earlier verdict instead of re-lexing the whole run.
+    """
+    if len(expected) <= 2:
+        return _can_join_cached(expected, flags, timeout)
+    return (_run_lexes_as(expected[:-1], flags, timeout)
+            and _join_step(expected, flags, timeout))
+
+
 def can_join(run_tokens, next_token, profile=None, *, checked_run=False):
     """Check that adjacent tokens keep their kinds and raw spellings.
 
-    The production layout may set checked_run once Clang has classified the
-    individual tokens and the contiguous run has passed each earlier join.
+    Without `checked_run`, the decision covers the whole contiguous run, so
+    three separate `.` tokens or `+` followed by `+` are rejected even though
+    each neighbour looks joinable. Verdicts for each prefix of the run are
+    cached, which keeps this as fast as the layout's incremental use.
+
+    The production layout may set `checked_run` once the contiguous run has
+    passed each earlier join; only the newly appended token is then checked.
     """
     profile = profile or VerificationProfile()
     if not run_tokens:
@@ -397,7 +435,8 @@ def can_join(run_tokens, next_token, profile=None, *, checked_run=False):
 
     flags = tuple(profile.flags)
     if not checked_run:
-        return _can_join_cached(expected, flags, profile.lex_timeout)
+        return _run_lexes_as(expected, flags, profile.lex_timeout)
+    return _join_step(expected, flags, profile.lex_timeout)
 
     # An appended delimiter is also independent, except when a parenthesis
     # could complete a C trigraph (??( or ??)).

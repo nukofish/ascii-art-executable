@@ -44,6 +44,10 @@ Tests can inject substitutes through the pipeline dependencies.
   `__TIMESTAMP__` are neutralised for this comparison only, because the layout
   necessarily moves lines and the clock can change between runs; values such
   as `assert` messages therefore report the generated program's own lines.
+  String literals in the expanded streams are compared without whitespace:
+  stringizing (`#x`, as in `assert` or a `SHOW(x)` debug macro) copies the
+  spacing between argument tokens, which layout changes. The artwork tokens
+  have already matched exactly, so only that spacing can differ.
   Both comparisons must pass for `token=PASS`.
   The first difference gives a zero-based index, spelling, and position on
   each side. For a preprocessing difference, each line names the line of the

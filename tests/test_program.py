@@ -98,6 +98,7 @@ def test_complete_program_fits_five_second_layout_budget(repeats):
     source = "\n".join(lines) + "\n"
 
     source_module._can_join_cached.cache_clear()
+    source_module._run_lexes_as.cache_clear()
     result = generate(GenerationRequest(
         source, ShapeSpec("cat"), layout_options=LayoutOptions(layout_timeout_s=5),
         program_mode=True,
@@ -247,6 +248,48 @@ int main(void) {
     subprocess.run(["clang", "-std=c11", str(generated), "-o", str(binary)], check=True)
     assert subprocess.run([str(binary)], capture_output=True, text=True,
                           check=True).stdout.startswith("2 1 ")
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")
+def test_stringized_arguments_may_change_spacing(tmp_path):
+    # Layout adds spaces between these unspaced arguments, and stringizing
+    # copies them, so the expanded strings differ from the original's.
+    source = """#include <assert.h>
+#include <stdio.h>
+#define SHOW(e) printf("%s = %d\\n", #e, (e))
+int main(void) {
+    int count = 3;
+    assert(count>0&&count<10);
+    SHOW(count*2+1);
+    return 0;
+}
+"""
+
+    result = generate(GenerationRequest(source, ShapeSpec("circle"), program_mode=True))
+
+    assert result.status.value == "OK", result.diagnostics
+    assert result.verification.token_status.value == "PASS"
+    generated = tmp_path / "generated.c"
+    generated.write_text(result.rendered.source_text, encoding="utf-8")
+    binary = tmp_path / "generated"
+    subprocess.run(["clang", "-std=c11", str(generated), "-o", str(binary)], check=True)
+    output = subprocess.run([str(binary)], capture_output=True, text=True, check=True).stdout
+    assert output.replace(" ", "") == "count*2+1=7\n"
+
+
+def test_expanded_strings_differ_only_by_whitespace():
+    from codeart.contracts import TokenLocation
+    from codeart.verify import _expanded_token_key
+
+    def key(spelling, kind="LITERAL"):
+        return _expanded_token_key(TokenLocation(kind, spelling, 1, 1))
+
+    assert key('"a > 0"') == key('"a>0"')
+    assert key('u8"a + b"') == key('u8"a+b"')
+    assert key('"a > 0"') != key('"a >= 0"')
+    assert key('"a > 0"') != key('L"a > 0"')
+    assert key("a") != key("b", "IDENTIFIER")
+    assert key("' '") != key("''")
 
 
 @pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")

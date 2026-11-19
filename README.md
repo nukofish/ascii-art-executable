@@ -125,7 +125,9 @@ Directives must be safely movable. A conditional block (`#if`/`#ifdef`) that
 contains code is only accepted before the first declaration; one inside a
 function body or after earlier code is rejected at its `#if` line, as is an
 `#undef` after code. Programs may use `assert`, `__LINE__` and the date and
-time macros; line numbers they report refer to the generated program.
+time macros; line numbers they report refer to the generated program, and
+text produced by stringizing (`#x`, such as an `assert` message) uses the
+generated program's spacing.
 
 The sample choices are `max2`, `min2`, `clamp`, `absdiff`, `gcd` and
 `sum_to_n`. Each includes eight fixed behavior inputs. Ordinary source and
