@@ -58,14 +58,15 @@ clang -std=c11 -pedantic-errors hello.c -o hello.exe
 git clone https://github.com/nukofish/ascii-art-executable
 cd ascii-art-executable
 py -3.11 -m venv .venv
-Set-ExecutionPolicy -Scope Process Bypass
+Set-ExecutionPolicy -Scope Process Bypass -Force
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
 python -m codeart.environment
 ```
 
-`Set-ExecutionPolicy -Scope Process Bypass` 只对当前窗口生效。Windows 默认
-不运行 `Activate.ps1` 这类 `.ps1` 脚本，所以需要这一步。不激活也可以，把下文
+`Set-ExecutionPolicy -Scope Process Bypass -Force` 只对当前窗口生效。Windows 默认
+不运行 `Activate.ps1` 这类 `.ps1` 脚本，所以需要这一步。`-Force` 用来跳过确认提示，
+在交互式窗口里该提示默认选"否"。不激活也可以，把下文
 命令里的 `python` 换成 `.\.venv\Scripts\python.exe` 即可。
 
 ## 3. 运行检查
@@ -132,7 +133,7 @@ cmd /c "`"$vs\Common7\Tools\VsDevCmd.bat`" -arch=x64 -no_logo && cl /nologo /std
 `vswhere` 命令检查。
 
 **`Activate.ps1` 因为禁止运行脚本而无法加载。** 先在该窗口执行
-`Set-ExecutionPolicy -Scope Process Bypass`，或者直接调用
+`Set-ExecutionPolicy -Scope Process Bypass -Force`，或者直接调用
 `.\.venv\Scripts\python.exe`。
 
 **fixture 或期望输出相关的测试因 `\r\n` 不同而失败。** Git for Windows 默认设置

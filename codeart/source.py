@@ -443,19 +443,3 @@ def can_join(run_tokens, next_token, profile=None, *, checked_run=False):
     if not checked_run:
         return _run_lexes_as(expected, flags, profile.lex_timeout)
     return _join_step(expected, flags, profile.lex_timeout)
-
-    # An appended delimiter is also independent, except when a parenthesis
-    # could complete a C trigraph (??( or ??)).
-    if (next_token.kind == "PUNCTUATION" and next_token.spelling in _JOIN_BOUNDARIES
-            and not (next_token.spelling in "()" and run_tokens[-1].spelling.endswith("?"))):
-        return True
-
-    # A standalone delimiter in the checked run cannot start a longer C token.
-    # Keep it in the suffix and let Clang check everything from there onward.
-    for index in range(len(expected) - 2, -1, -1):
-        kind, spelling = expected[index]
-        if kind == "PUNCTUATION" and spelling in _JOIN_BOUNDARIES:
-            expected = expected[index:]
-            break
-
-    return _can_join_cached(expected, flags, profile.lex_timeout)
