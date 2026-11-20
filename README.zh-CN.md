@@ -9,7 +9,99 @@
 libclang 检查 token 是否保持，Clang 编译生成结果。词法、几何、编译和行为
 四项检查分别展示。
 
+```sh
+pip install code-art-studio
+codeart --program hello.c --shape cat --output hello_cat.c
+```
+
+## 动机
+
+把源代码排成图案由来已久，从 IOCCC（国际 C 语言混乱代码大赛）的作品，到印在
+T 恤上的代码图案都是。手工做一个要花好几个小时：每个 token 都要挪位置，而且
+一个 `+` 不小心挨着另一个 `+`，就悄悄变成了 `++`。大多数人要么放弃，要么做出
+一张再也编译不过的"代码画"。我们想要一个工具来完成这些繁琐的工作，让学生几秒
+钟就能把自己的作业排成一只猫，交上去的程序行为却完全不变。
+
+## 创新点
+
+现有工具解决的是相邻的问题，而不是这一个：
+
+| 工具 | 能做什么 | 做不到什么 |
+| --- | --- | --- |
+| `pyfiglet`、`art` 等文字横幅工具 | 用字符拼出字母 | 输出只是图，不是程序 |
+| 图片转 ASCII 工具 | 把照片转成字符画 | 同上，不能编译 |
+| `clang-format`、`black` 等格式化工具 | 重新排版真实代码 | 只保持代码原有形状，画不出猫 |
+| 手工制作的 IOCCC 作品 | 能运行的图案程序 | 每个程序都要花几个小时手工排 |
+
+Code Art Studio 把后两者结合起来：自动重排一份真实、完整的 C11 程序，再证明
+结果仍是同一个程序。
+
+- **token 级精确排版**：libclang 把程序切成 token。只有当 Clang 把两个 token
+  读回来仍是原来那两个时，才允许它们紧挨着放。所以 `a + +b` 绝不会变成
+  `a ++b`，也绝不会拼出 `??(`。
+- **独立验证**：排版完成后重新做词法分析、测量和编译。token 序列和预处理后的
+  宏展开必须与原程序完全一致，代码必须落在图形之内，程序必须能编译和链接。
+  内置样例还会实际运行，返回值必须相同。
+- **整个程序，而不只是片段**：`#include`、`#define` 和条件编译块留在图案上方，
+  其余部分（包括字符串和标识符里的中文）都排进图形里。原程序的注释会被去掉，
+  空位用短注释填满。
+- **三种用法**：命令行、本地网页和可在 notebook 中调用的 Python 接口，支持
+  Linux、macOS 和 Windows。
+
+## 使用场景
+
+- **C 语言教学**：让学生看到空格和换行不属于 C 程序的含义，token 才是。验证
+  报告会明确指出，哪两个 token 一旦拼在一起就会变成别的。
+- **课程项目与展示**：把完成的作业做成仍能编译的海报或幻灯片，比如一个猫头
+  形状的成绩统计程序。
+- **编程社团与竞赛**：生成 IOCCC 风格的图案程序作为起点，再手工精修。
+- **测试 C 工具**：生成的文件排版奇特但都是合法的 C11，适合用来检验格式化
+  工具、静态检查工具和编译器能否处理怪异的排版。
+
+## 快速开始
+
+从 PyPI 安装。另外还需要 PATH 上有支持 C11 的 `clang`（各系统的安装方法见
+[安装](#安装)）：
+
+```sh
+pip install code-art-studio
+clang --version
+```
+
+排版一个完整程序，并编译结果：
+
+```sh
+codeart --program hello.c --shape cat --output hello_cat.c --report hello_cat.json
+clang -std=c11 hello_cat.c -o hello_cat && ./hello_cat
+```
+
+启动本地网页（打开 http://127.0.0.1:8765）：
+
+```sh
+codeart-web
+```
+
+在 Python 或 Jupyter notebook 中使用：
+
+```python
+from codeart.contracts import GenerationRequest, ShapeSpec
+from codeart.pipeline import generate
+
+source = open("hello.c", encoding="utf-8").read()
+result = generate(GenerationRequest(source, ShapeSpec("cat"), program_mode=True))
+print(result.status.value)          # 所有必需检查都通过时为 OK
+print(result.rendered.source_text)  # 排好的程序
+```
+
+在 notebook 里也可以直接用命令行：`!codeart --program hello.c --shape cat`。
+[`examples/demo.ipynb`](examples/demo.ipynb) 演示了三种图形。网页只监听
+127.0.0.1，所以在远程 JupyterHub 上请用命令行或 Python 接口。`codeart` 等同于
+`python -m codeart.cli`，`codeart-web` 等同于 `python -m codeart.app`。
+
 ## 安装
+
+只是使用的话，装好支持 C11 的 Clang 编译器后，`pip install code-art-studio`
+就够了。下面的步骤用于搭建开发环境。
 
 需要 Python 3.10 或更新版本，以及支持 C11 的 Clang 编译器。
 
@@ -162,6 +254,9 @@ python -m scripts.run_verification --output-dir docs/reports/local-check/fixed
 [F 的后续交付记录](docs/reports/F_delivery.md)。
 
 ## CI
+
+在 GitHub 上发布 release 后，新版本会自动上传到 PyPI，详见
+[发布到 PyPI](docs/publishing.md)。
 
 当前 CI 采用 #27 已合并的配置：Ubuntu 使用 ubuntu-latest、Python 3.12、
 固定 clang-18 和 pip 提供的 libclang 18.1.1。Ubuntu 全量任务限时 30 分钟；

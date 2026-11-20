@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "code-art-studio"
+dynamic = ["version"]
+description = "Arrange a complete C program as a circle, a cat or hollow CODE, and prove it still compiles and means the same."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE", "codeart/web/fonts/OFL.txt"]
+authors = [{ name = "Code Art Studio team (CS1302 group08)" }]
+requires-python = ">=3.10"
+dependencies = ["libclang==18.1.1"]
+keywords = ["ascii art", "c", "clang", "libclang", "code formatting", "obfuscation"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Education",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: C",
+    "Programming Language :: Python :: 3",
+    "Topic :: Artistic Software",
+    "Topic :: Software Development :: Code Generators",
+]
+
+[project.urls]
+Homepage = "https://github.com/nukofish/ascii-art-executable"
+Repository = "https://github.com/nukofish/ascii-art-executable"
+Documentation = "https://github.com/nukofish/ascii-art-executable#readme"
+Issues = "https://github.com/nukofish/ascii-art-executable/issues"
+
+[project.optional-dependencies]
+test = ["pytest==9.2.0"]
+
+[project.scripts]
+codeart = "codeart.cli:main"
+codeart-web = "codeart.app:main"
+
+[tool.setuptools]
+packages = ["codeart"]
+
+[tool.setuptools.package-data]
+codeart = ["web/*.html", "web/*.js", "web/*.css", "web/fonts/*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "codeart.__version__" }
