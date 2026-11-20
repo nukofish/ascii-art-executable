@@ -217,8 +217,10 @@ Web and CLI reports include that revision information.
 GitHub Actions runs four jobs. `Fast pure-Python checks (ubuntu)` uses
 ubuntu-latest with a five minute timeout and runs the pure-Python test files
 without libclang. `Full checks (ubuntu, clang + node)` is the baseline full
-suite: it uses ubuntu-latest with a fifteen minute timeout, installs `clang-18`
-plus `requirements-dev.txt`, logs the compiler version and the environment
+suite: it uses ubuntu-latest with a thirty minute timeout, installs `clang-18`
+without recommended packages (the downloaded packages are cached per runner
+image, because the runner's Ubuntu mirror is sometimes slow) plus
+`requirements-dev.txt`, logs the compiler version and the environment
 report, checks the browser script with `node --check`, rejects a decrease in
 the collected test count relative to the base revision and runs the whole
 suite. `Full checks (windows, clang + node)` runs on windows-latest with
