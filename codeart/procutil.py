@@ -55,14 +55,67 @@ def check_context(ctx) -> None:
         raise WorkStopped("PIPELINE_TIMEOUT")
 
 
+_CREATE_SUSPENDED = 0x00000004
+_win32 = None
+
+
+def _win32_api():
+    """Bind the Win32 calls once; later job objects only make the calls."""
+    global _win32
+    if _win32 is None:
+        import ctypes
+        from ctypes import wintypes
+        from types import SimpleNamespace
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel32.CreateJobObjectW.argtypes = (wintypes.LPVOID, wintypes.LPCWSTR)
+        kernel32.AssignProcessToJobObject.argtypes = (wintypes.HANDLE, wintypes.HANDLE)
+        kernel32.TerminateJobObject.argtypes = (wintypes.HANDLE, wintypes.UINT)
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        ntdll = ctypes.WinDLL("ntdll")
+        ntdll.NtResumeProcess.restype = ctypes.c_long
+        ntdll.NtResumeProcess.argtypes = (wintypes.HANDLE,)
+        _win32 = SimpleNamespace(kernel32=kernel32, ntdll=ntdll)
+    return _win32
+
+
+class _WindowsJob:
+    """A job object holding one child and every process it starts.
+
+    TerminateProcess stops only the child. A wrapper such as a .cmd compiler
+    shim leaves descendants that keep the pipes open, so `run_command` starts
+    each child suspended, puts it in a job before it runs, and `stop_process`
+    ends the whole job at once.
+    """
+
+    def __init__(self, proc):
+        self._kernel32 = kernel32 = _win32_api().kernel32
+        self.handle = kernel32.CreateJobObjectW(None, None)
+        if self.handle and not kernel32.AssignProcessToJobObject(self.handle, int(proc._handle)):
+            self.close()
+
+    def terminate(self):
+        if self.handle:
+            self._kernel32.TerminateJobObject(self.handle, 1)
+
+    def close(self):
+        if self.handle:
+            self._kernel32.CloseHandle(self.handle)
+            self.handle = None
+
+
 def stop_process(proc: subprocess.Popen | None) -> None:
-    """Kill a child started in its own session. The caller reaps it."""
+    """Kill a child and its descendants. The caller reaps the child."""
     if proc is None or proc.pid is None:
         return
     try:
         if os.name == "posix":
             os.killpg(proc.pid, signal.SIGKILL)
         else:
+            job = getattr(proc, "_codeart_job", None)
+            if job is not None:
+                job.terminate()
             proc.kill()
     except ProcessLookupError:
         pass
@@ -85,9 +138,29 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
             args, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             start_new_session=(os.name == "posix"),
+            # On Windows the child waits until it is in its job object, so
+            # nothing it starts can escape the job.
+            creationflags=_CREATE_SUSPENDED if os.name == "nt" else 0,
         )
     except OSError as exc:
         raise DependencyUnavailable(str(exc)) from exc
+    job = None
+    if os.name == "nt" and isinstance(getattr(proc, "_handle", None), int):
+        try:
+            job = proc._codeart_job = _WindowsJob(proc)
+        except Exception:
+            # Without a job, stop_process still ends the child itself.
+            job = None
+        finally:
+            _win32_api().ntdll.NtResumeProcess(int(proc._handle))
+    try:
+        return _wait_for(proc, args, ctx, deadline, real_deadline)
+    finally:
+        if job is not None:
+            job.close()
+
+
+def _wait_for(proc, args, ctx, deadline, real_deadline):
     with proc:
         try:
             while True:
@@ -116,6 +189,10 @@ def run_command(args, *, cwd: Path, env, ctx, timeout: float):
         stdout, _ = proc.communicate()
         check_context(ctx)
         raise CommandTimedOut(stdout.decode("utf-8", errors="replace"))
+
+
+# Windows linkers add .exe to an output name that has no extension.
+_PROGRAM_NAME = "program.exe" if os.name == "nt" else "program"
 
 
 class BuildFailed(Exception):
@@ -173,7 +250,7 @@ class BuildSession:
         try:
             source_path = directory / "input.c"
             source_path.write_text(source + wrapper, encoding="utf-8", newline="")
-            artifact = directory / ("input.o" if mode == "object" else "program")
+            artifact = directory / ("input.o" if mode == "object" else _PROGRAM_NAME)
             args = [compiler.path, *compiler.flags]
             if mode == "object":
                 args.append("-c")

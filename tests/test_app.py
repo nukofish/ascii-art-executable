@@ -57,7 +57,9 @@ def call(base, path, payload=None, origin=None):
 
 
 def wait_result(base, identifier):
-    deadline = monotonic() + 5
+    # Compiling and linking with the MSVC toolchain is slower than on Linux;
+    # the poll returns as soon as the job finishes.
+    deadline = monotonic() + 30
     while monotonic() < deadline:
         data, _ = call(base, "/api/jobs/" + identifier)
         job = json.loads(data)
@@ -147,10 +149,10 @@ def test_web_full_program_downloads_the_verified_complete_source():
         assert job["result"]["preamble_text"] == prefix
         assert job["result"]["source_text"].startswith(prefix)
         assert job["result"]["artwork_character_widths"] == {"分": 2, "数": 2, "：": 2}
-        assert all(
-            job["result"]["checks"][name]["status"] == "PASS"
-            for name in ("token", "geometry", "compile")
-        )
+        checks = job["result"]["checks"]
+        assert {name: checks[name]["status"] for name in ("token", "geometry", "compile")} == {
+            "token": "PASS", "geometry": "PASS", "compile": "PASS",
+        }, job["result"]["diagnostics"]
         assert job["result"]["checks"]["behavior"]["status"] == "NOT_RUN"
         downloaded, _ = call(base, f"/api/jobs/{identifier}/source.c")
         assert downloaded.decode("utf-8") == job["result"]["source_text"]

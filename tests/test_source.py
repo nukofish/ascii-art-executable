@@ -101,6 +101,36 @@ def test_invalid_input_keeps_diagnostic_through_pipeline():
     assert result.diagnostics[0].code == ErrorCode.UNSUPPORTED_SOURCE
 
 
+
+def _process_exists(pid):
+    """Whether `pid` names a live process, without signalling it on any OS."""
+    if os.name == "nt":
+        # On Windows os.kill(pid, 0) sends CTRL_C_EVENT instead of probing.
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        try:
+            code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return False
+            return code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
 @pytest.mark.parametrize(("clock", "budget", "cancel", "expected"), [
     (monotonic, 30, False, ErrorCode.ANALYSIS_TIMEOUT),
     (monotonic, 30, True, ErrorCode.CANCELLED),
@@ -132,8 +162,7 @@ def test_analysis_stops_and_reaps_worker(monkeypatch, tmp_path, clock, budget, c
         timer.cancel()
     assert exc.value.diagnostic.code == expected
     assert pid_file.exists()
-    with pytest.raises(ProcessLookupError):
-        os.kill(int(pid_file.read_text()), 0)
+    assert not _process_exists(int(pid_file.read_text()))
 
 
 @pytest.mark.parametrize("name", tuple(BUILTIN_FIXTURES))

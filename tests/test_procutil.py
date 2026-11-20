@@ -1,8 +1,11 @@
 """Preserve the old process-module imports during the public-module migration."""
 
+import os
 import subprocess
 import sys
+import time
 from threading import Event
+from time import monotonic
 from unittest.mock import MagicMock, Mock, call
 
 import pytest
@@ -90,3 +93,45 @@ def test_frozen_clock_stops_and_reaps_real_child(
         assert error.value.reason == "PIPELINE_TIMEOUT"
     assert len(children) == 1
     assert children[0].returncode not in (None, 0)
+
+
+_WRAPPER = (
+    "import subprocess, sys, time; "
+    "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)']); "
+    "time.sleep(30)"
+)
+
+
+def _time_out_wrapper(tmp_path):
+    started = monotonic()
+    with pytest.raises(procutil.CommandTimedOut):
+        procutil.run_command(
+            [sys.executable, "-c", _WRAPPER], cwd=tmp_path, env=None,
+            ctx=RunContext(monotonic() + 60), timeout=1.0,
+        )
+    return monotonic() - started
+
+
+def test_timeout_stops_descendants_that_hold_the_pipes(tmp_path):
+    # A compiler wrapper (a .cmd shim on Windows) starts its own child, which
+    # inherits stdout. Killing only the wrapper would leave communicate()
+    # waiting for the grandchild to exit. POSIX kills the process group;
+    # Windows ends the job object the child was placed in.
+    assert _time_out_wrapper(tmp_path) < 10
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows job objects")
+def test_child_cannot_start_descendants_before_it_joins_its_job(monkeypatch, tmp_path):
+    # Setting up the job used to race the child: on a cold first call the
+    # wrapper could start its grandchild before the assignment, and the
+    # timeout then waited the full 30 s for it. The child now starts
+    # suspended, so even a slow setup cannot let a descendant escape.
+    real_job = procutil._WindowsJob
+
+    class SlowJob(real_job):
+        def __init__(self, proc):
+            time.sleep(1.0)
+            super().__init__(proc)
+
+    monkeypatch.setattr(procutil, "_WindowsJob", SlowJob)
+    assert _time_out_wrapper(tmp_path) < 10

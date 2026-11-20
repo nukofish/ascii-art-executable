@@ -206,7 +206,9 @@ def test_conditional_code_after_program_code_is_rejected(source, line):
 
 @pytest.mark.skipif(shutil.which("clang") is None, reason="Clang is required")
 def test_directive_only_conditionals_may_follow_program_code():
-    source = """#ifdef _WIN32
+    # An undefined guard keeps the test independent of the host: on Windows,
+    # _WIN32 would pull in all of <windows.h>.
+    source = """#ifdef CODEART_UNDEFINED_PLATFORM
 #include <windows.h>
 #endif
 #include <stdio.h>
@@ -319,7 +321,9 @@ int main() { printf(问候 "，世界！%d\\n", 数量()); return 0; }
              str(source_path), "-o", str(binary_path)],
             check=True, capture_output=True, timeout=10,
         )
-        outputs.append(subprocess.check_output([str(binary_path)], timeout=5).decode("utf-8"))
+        output = subprocess.check_output([str(binary_path)], timeout=5).decode("utf-8")
+        # The Windows C runtime writes "\n" to a text-mode stdout as CRLF.
+        outputs.append(output.replace("\r\n", "\n"))
     assert outputs == ["你好，世界！2\n"] * 2
 
 

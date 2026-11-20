@@ -51,7 +51,9 @@ Tests can inject substitutes through the pipeline dependencies.
   Both comparisons must pass for `token=PASS`.
   The first difference gives a zero-based index, spelling, and position on
   each side. For a preprocessing difference, each line names the line of the
-  original or generated source that produced the token (0 for a header), and
+  original or generated source that produced the token (0 for a header,
+  recognised from the preprocessor's line markers after undoing Clang's
+  backslash escapes in Windows paths), and
   the diagnostic points at the original source line without a column. A side
   that has reached the end is `None`. A token
   failure leaves geometry, compile, and behavior at `NOT_RUN (TOKEN_NOT_PASS)`.
@@ -89,7 +91,9 @@ Tests can inject substitutes through the pipeline dependencies.
   overall timeout leave unfinished checks at `NOT_RUN`. A compilation or
   execution stage timeout is a `FAIL`. On macOS and Linux, E runs compiler
   and test children in their own process groups and kills and reaps them
-  on cancellation or timeout.
+  on cancellation or timeout. On Windows each child starts suspended in its
+  own job object, and cancellation or timeout ends the whole job, including
+  processes started by a compiler wrapper.
 
 F displays the four statuses independently. `PASS` means the check ran and met
 its criteria, `FAIL` means it detected a failure, and `NOT_RUN` records a

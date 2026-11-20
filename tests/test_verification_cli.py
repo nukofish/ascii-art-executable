@@ -32,7 +32,7 @@ def test_cat_scale_without_exact_reference_is_not_run(tmp_path, legacy_reference
         (tmp_path / name).write_bytes((run_verification.SHAPE_FIXTURES / name).read_bytes())
     if legacy_reference:
         name = "metrics_h64.json"
-        document = json.loads((run_verification.SHAPE_FIXTURES / name).read_text())
+        document = json.loads((run_verification.SHAPE_FIXTURES / name).read_text(encoding="utf-8"))
         del document["shapes"]["cat"]["features"]["nose"]["boundary_cells"]
         (tmp_path / name).write_text(json.dumps(document))
 

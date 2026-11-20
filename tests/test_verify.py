@@ -34,27 +34,72 @@ from fixtures.verification_reports import make_verifier_stub
 
 CLANG = shutil.which("clang")
 requires_clang = pytest.mark.skipif(CLANG is None, reason="Clang is required")
-_RAW_TOKEN = re.compile(r"(\w+) '(.*?)'\t[^\n]*\tLoc=<<stdin>:(\d+):(\d+)>\n", re.DOTALL)
+# Clang 20 and earlier separate the fields with tabs, put flags such as
+# [StartOfLine] before Loc= and print spellings raw. Clang 21 and later pad
+# with spaces, put the flags after Loc= and escape spellings (\\, \t, \n,
+# \" and three-digit octal), so a newline no longer appears inside a record.
+_RAW_TOKEN = re.compile(
+    r"(\w+)[ \t]+'(.*?)'[ \t]+(?:\[\w+\][ \t]*)*Loc=<<stdin>:(\d+):(\d+)>[^\n]*\n",
+    re.DOTALL,
+)
+_ESCAPE = re.compile(r'\\(\\|t|n|"|[0-7]{3})')
+_UNESCAPED = {"\\": "\\", "t": "\t", "n": "\n", '"': '"'}
+
+
+def parse_raw_tokens(dump):
+    """Parse `clang -Xclang -dump-raw-tokens` output from Clang 18 through 23."""
+    escaped = "\t" not in dump
+    tokens = []
+    offset = 0
+    for match in _RAW_TOKEN.finditer(dump):
+        assert match.start() == offset, dump
+        offset = match.end()
+        kind, spelling, line, column = match.groups()
+        if escaped:
+            spelling = _ESCAPE.sub(
+                lambda m: _UNESCAPED.get(m.group(1)) or chr(int(m.group(1), 8)), spelling,
+            )
+        if kind == "unknown" and spelling.isspace():
+            continue
+        tokens.append(LexedToken(kind, spelling, int(line), int(column), kind == "comment"))
+    assert offset == len(dump), dump
+    return tokens
 
 
 def clang_lex_for_test(source, *, ctx):
     ctx.check()
     result = subprocess.run(
         [CLANG, "-std=c11", "-x", "c", "-fsyntax-only", "-Xclang", "-dump-raw-tokens", "-"],
-        input=source, text=True, capture_output=True, check=True,
+        # Bytes keep Windows text mode from turning "\n" into CRLF on stdin.
+        input=source.encode("utf-8"), capture_output=True, check=True,
         timeout=ctx.remaining_s(),
     )
-    tokens = []
-    offset = 0
-    for match in _RAW_TOKEN.finditer(result.stderr):
-        assert match.start() == offset, result.stderr
-        offset = match.end()
-        kind, spelling, line, column = match.groups()
-        if kind == "unknown" and spelling.isspace():
-            continue
-        tokens.append(LexedToken(kind, spelling, int(line), int(column), kind == "comment"))
-    assert offset == len(result.stderr), result.stderr
-    return tokens
+    return parse_raw_tokens(result.stderr.decode("utf-8").replace("\r\n", "\n"))
+
+
+@pytest.mark.parametrize("dump", [
+    # Clang 18 and 20 layout.
+    "int 'int'\t [StartOfLine]\tLoc=<<stdin>:1:1>\n"
+    "unknown ' '\t\tLoc=<<stdin>:1:4>\n"
+    "identifier 's'\t\tLoc=<<stdin>:1:5>\n"
+    "unknown '\n  '\t\tLoc=<<stdin>:1:6>\n"
+    "string_literal '\"a\\n\"'\t [StartOfLine]\tLoc=<<stdin>:2:3>\n"
+    "semi ';'\t\tLoc=<<stdin>:2:8>\n"
+    "unknown '\n'\t\tLoc=<<stdin>:2:9>\n",
+    # Clang 21 and later layout, as printed by LLVM 23.1.6 on Windows.
+    "raw_identifier   'int'                           Loc=<<stdin>:1:1>     [StartOfLine]\n"
+    "unknown          ' '                             Loc=<<stdin>:1:4>    \n"
+    "raw_identifier   's'                             Loc=<<stdin>:1:5>    \n"
+    "unknown          '\\015\\n  '                    Loc=<<stdin>:1:6>    \n"
+    "string_literal   '\\\"a\\\\n\\\"'                     Loc=<<stdin>:2:3>     [StartOfLine]\n"
+    "semi             ';'                             Loc=<<stdin>:2:8>    \n"
+    "unknown          '\\n'                           Loc=<<stdin>:2:9>    \n",
+], ids=["clang-20", "clang-23"])
+def test_raw_token_dump_parses_in_both_clang_layouts(dump):
+    tokens = parse_raw_tokens(dump)
+    assert [(token.spelling, token.line, token.column) for token in tokens] == [
+        ("int", 1, 1), ("s", 1, 5), ('"a\\n"', 2, 3), (";", 2, 8),
+    ]
 
 
 @dataclass(frozen=True)
@@ -500,12 +545,19 @@ def test_bad_c_compilation_and_behavior_result(monkeypatch):
 
 
 def write_compiler(path):
-    path.write_text(f"#!{sys.executable}\n"
-                    "import sys, time\n"
-                    "if '--version' in sys.argv:\n"
-                    "    print('test compiler 1')\n"
-                    "else:\n"
-                    "    time.sleep(20)\n")
+    script = ("import sys, time\n"
+              "if '--version' in sys.argv:\n"
+              "    print('test compiler 1')\n"
+              "else:\n"
+              "    time.sleep(20)\n")
+    if os.name == "nt":
+        # Windows runs neither shebangs nor files without an executable suffix.
+        program = path.with_suffix(".py")
+        program.write_text(script, encoding="utf-8")
+        path = path.with_suffix(".cmd")
+        path.write_text(f'@"{sys.executable}" "{program}" %*\r\n', encoding="utf-8")
+        return str(path)
+    path.write_text(f"#!{sys.executable}\n" + script, encoding="utf-8")
     path.chmod(0o755)
     return str(path)
 
