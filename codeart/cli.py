@@ -54,7 +54,9 @@ def main(argv=None) -> int:
 
     try:
         input_path = args.file or args.program or args.source
-        source = DEMO_SOURCE if args.demo else selection.fixture.source if selection else input_path.read_bytes().decode("utf-8")
+        # utf-8-sig drops the byte order mark many Windows editors write,
+        # as function extraction and the web page already do.
+        source = DEMO_SOURCE if args.demo else selection.fixture.source if selection else input_path.read_bytes().decode("utf-8-sig")
     except (OSError, UnicodeError) as exc:
         parser.exit(2, f"Cannot read source: {exc}\n")
 

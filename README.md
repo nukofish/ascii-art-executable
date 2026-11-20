@@ -35,7 +35,7 @@ PowerShell, with tested versions and common problems, are in
 
 ```powershell
 py -3.11 -m venv .venv
-Set-ExecutionPolicy -Scope Process Bypass
+Set-ExecutionPolicy -Scope Process Bypass -Force
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
 python -m codeart.environment

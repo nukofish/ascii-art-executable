@@ -38,7 +38,7 @@ Windows 上的 Clang 使用 MSVC 的头文件和链接器，所以还需要安�
 
 ```powershell
 py -3.11 -m venv .venv
-Set-ExecutionPolicy -Scope Process Bypass
+Set-ExecutionPolicy -Scope Process Bypass -Force
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
 python -m codeart.environment

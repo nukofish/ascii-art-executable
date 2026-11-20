@@ -66,6 +66,25 @@ def test_cli_program_arranges_and_writes_the_complete_translation_unit(tmp_path)
     assert run.stdout == "17\n"
 
 
+@pytest.mark.parametrize(("option", "text"), [
+    ("--program", "int main(void) { return 0; }\n"),
+    ("--source", "int add(int a, int b) { return a + b; }\n"),
+])
+def test_cli_accepts_a_utf8_byte_order_mark(tmp_path, option, text):
+    # PowerShell 5.1's Set-Content -Encoding UTF8 and Visual Studio write one.
+    source = tmp_path / "input.c"
+    output = tmp_path / "generated.c"
+    source.write_bytes(b"\xef\xbb\xbf" + text.encode("utf-8"))
+
+    result = subprocess.run(
+        [sys.executable, "-m", "codeart.cli", option, str(source), "--output", str(output)],
+        capture_output=True, text=True, timeout=35,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert not output.read_bytes().startswith(b"\xef\xbb\xbf")
+
+
 def test_cli_skipped_required_check_returns_nonzero(monkeypatch):
     import codeart.cli as cli
     result = GenerationResult(verification=VerificationReport(

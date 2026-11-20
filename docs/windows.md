@@ -59,15 +59,16 @@ clang -std=c11 -pedantic-errors hello.c -o hello.exe
 git clone https://github.com/nukofish/ascii-art-executable
 cd ascii-art-executable
 py -3.11 -m venv .venv
-Set-ExecutionPolicy -Scope Process Bypass
+Set-ExecutionPolicy -Scope Process Bypass -Force
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
 python -m codeart.environment
 ```
 
-`Set-ExecutionPolicy -Scope Process Bypass` only affects the current window. It
+`Set-ExecutionPolicy -Scope Process Bypass -Force` only affects the current window. It
 is needed because Windows does not run `.ps1` scripts such as `Activate.ps1` by
-default. Without activating, every command also works with
+default. `-Force` skips the confirmation prompt, whose default answer is No in an
+interactive window. Without activating, every command also works with
 `.\.venv\Scripts\python.exe` in place of `python`.
 
 ## 3. Run the checks
@@ -137,7 +138,7 @@ find the MSVC headers or linker. Install the C++ desktop workload and a Windows
 SDK, and check with the `vswhere` command in step 1.
 
 **`Activate.ps1 cannot be loaded because running scripts is disabled`.** Run
-`Set-ExecutionPolicy -Scope Process Bypass` in that window first, or call
+`Set-ExecutionPolicy -Scope Process Bypass -Force` in that window first, or call
 `.\.venv\Scripts\python.exe` directly.
 
 **Fixture or expected-output tests fail with `\r\n` differences.** Git for
