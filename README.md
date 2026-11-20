@@ -1,6 +1,6 @@
 # Code Art Studio
 
-English · [简体中文](README.zh-CN.md)
+English · [简体中文](https://github.com/nukofish/ascii-art-executable/blob/main/README.zh-CN.md)
 
 Paste or open a complete C11 program and arrange it as a circle, a cat head
 or hollow CODE. Copy or download the resulting `.c` file. The layout starts
@@ -11,7 +11,109 @@ and built-in samples are also available.
 libclang checks token preservation and Clang compiles the result. The app
 reports token, geometry, compile and behavior checks separately.
 
+```sh
+pip install code-art-studio
+codeart --program hello.c --shape cat --output hello_cat.c
+```
+
+## Why
+
+Shaped source code is a long tradition, from the obfuscated programs of the
+IOCCC to banners of code printed on T-shirts. Making one by hand takes hours:
+every token has to move, and a single misplaced `+` next to another `+`
+silently becomes `++`. Most people give up, or produce a picture that no
+longer compiles. We wanted a tool that does the tedious part, so that a
+student can turn their own assignment into a cat in seconds and still hand in
+a program that behaves exactly the same.
+
+## What is new
+
+Existing tools solve neighbouring problems, but not this one:
+
+| Tool | What it does | What it does not do |
+| --- | --- | --- |
+| Text banner tools such as `pyfiglet` or `art` | Draw letters out of characters | The output is a picture, not a program |
+| Image-to-ASCII converters | Turn a photo into characters | Same: nothing compiles |
+| Formatters such as `clang-format` or `black` | Re-indent real code | Keep the code's own shape; cannot draw a cat |
+| Hand-made IOCCC entries | Shaped programs that run | Take hours of manual work per program |
+
+Code Art Studio combines the last two: it reshapes a real, complete C11
+program automatically, and then proves the result is still the same program.
+
+- **Token-exact layout.** libclang splits the program into tokens. Two tokens
+  are placed side by side only when Clang reads them back as the same two
+  tokens, so `a + +b` never turns into `a ++b`, and `??(` is never formed.
+- **Independent verification.** After layout, the result is lexed, measured
+  and compiled again: the token sequence and the preprocessed macro
+  expansion must match the original exactly, the code must stay inside the
+  shape, and the program must compile and link. Built-in samples are also run
+  and must return the same values.
+- **Whole programs, not just snippets.** `#include`, `#define` and
+  conditional blocks stay above the artwork; everything else, including
+  Chinese text in strings and identifiers, is arranged inside the shape. The
+  program's own comments are dropped, and short filler comments fill the empty
+  cells.
+- **Three ways to use it.** A command-line tool, a local web page, and a
+  Python API for notebooks, on Linux, macOS and Windows.
+
+## Use cases
+
+- **Teaching C.** Show students that whitespace and line breaks are not part
+  of a C program's meaning, and that tokens are. The verification report
+  explains exactly which token would change if two were joined.
+- **Course projects and demos.** Turn a finished assignment into a poster or a
+  slide that still compiles, for example a cat-shaped grade calculator.
+- **Programming clubs and contests.** Produce IOCCC-style shaped entries as a
+  starting point, then refine them by hand.
+- **Testing C tools.** Generated files are unusual but valid C11, which makes
+  them good inputs for checking that formatters, linters and compilers handle
+  odd layouts.
+
+## Quick start
+
+Install from PyPI. You also need a C11 `clang` on PATH (see
+[Install](#install) for each operating system):
+
+```sh
+pip install code-art-studio
+clang --version
+```
+
+Arrange a complete program and compile the result:
+
+```sh
+codeart --program hello.c --shape cat --output hello_cat.c --report hello_cat.json
+clang -std=c11 hello_cat.c -o hello_cat && ./hello_cat
+```
+
+Start the local web interface (open http://127.0.0.1:8765):
+
+```sh
+codeart-web
+```
+
+Use it from Python or a Jupyter notebook:
+
+```python
+from codeart.contracts import GenerationRequest, ShapeSpec
+from codeart.pipeline import generate
+
+source = open("hello.c", encoding="utf-8").read()
+result = generate(GenerationRequest(source, ShapeSpec("cat"), program_mode=True))
+print(result.status.value)          # OK when every required check passed
+print(result.rendered.source_text)  # the arranged program
+```
+
+In a notebook the command line works too: `!codeart --program hello.c --shape cat`.
+[`examples/demo.ipynb`](https://github.com/nukofish/ascii-art-executable/blob/main/examples/demo.ipynb) walks through all three shapes.
+The web interface only listens on 127.0.0.1, so on a remote JupyterHub use the
+command line or the Python API. `codeart` is the same as `python -m codeart.cli`,
+and `codeart-web` is the same as `python -m codeart.app`.
+
 ## Install
+
+To use the tool, `pip install code-art-studio` is enough once a C11 Clang
+compiler is installed. The steps below set up a development checkout.
 
 Use Python 3.10 or later and a C11 Clang compiler. The pinned libclang Python
 package includes its native library. On macOS, install Apple's command-line
@@ -31,7 +133,7 @@ python -m pytest -q
 On Windows, Clang uses the MSVC headers and linker, so Visual Studio or its
 Build Tools with the C++ desktop workload is also required. The same steps in
 PowerShell, with tested versions and common problems, are in
-[Running on Windows](docs/windows.md).
+[Running on Windows](https://github.com/nukofish/ascii-art-executable/blob/main/docs/windows.md).
 
 ```powershell
 py -3.11 -m venv .venv
@@ -70,7 +172,7 @@ also passed the full suite; that run did not execute production acceptance. Late
 | Custom-source behavior | NOT_RUN by design | NO_FIXTURE |
 | Behavior above the size limit | NOT_RUN by resource policy | OUTPUT_TOO_LARGE |
 | Current CI | See the current run | [Actions](https://github.com/nukofish/ascii-art-executable/actions/workflows/tests.yml) |
-| Owner completion sheets | Versioned separately | [Reports index](docs/reports/README.md) |
+| Owner completion sheets | Versioned separately | [Reports index](https://github.com/nukofish/ascii-art-executable/blob/main/docs/reports/README.md) |
 
 Reproduce acceptance with the command below and inspect `report.json`:
 `passed` combines the fixed matrix and scaled-cat checks. The acceptance
@@ -105,7 +207,7 @@ The web app does not execute user programs. Custom program behavior checks are
 
 The artwork preview fits the available space and keeps lines and holes aligned.
 Wide characters use two cells. The preview uses bundled Roboto Mono Regular
-and system fallback fonts for missing glyphs. See the [app module guide](docs/modules/app.md).
+and system fallback fonts for missing glyphs. See the [app module guide](https://github.com/nukofish/ascii-art-executable/blob/main/docs/modules/app.md).
 
 ## Command line
 
@@ -170,7 +272,7 @@ line splicing, trigraphs and real tabs inside tokens are rejected. Predefined
 macro names such as `__LINE__`, `__FILE__` and `__COUNTER__` are rejected by
 name even without a directive, and
 GNU extension keywords such as `__asm__` are outside the frozen scope.
-See [source analysis](docs/modules/source.md).
+See [source analysis](https://github.com/nukofish/ascii-art-executable/blob/main/docs/modules/source.md).
 
 The verification evidence supports token preservation, C11 compilation and
 matching behavior on the specified sample inputs. A skipped check is shown
@@ -190,14 +292,17 @@ worktree state, records 18 h32 outputs and counts actual behavior comparisons.
 The same run checks the cat mask against B's h32/h64/h128 reference files.
 `cat_scales` records each scale's result. `passed` combines the fixed matrix
 and all three scale checks. The exit code still reports the fixed matrix.
-See [the verification guide](docs/modules/verify.md) and
-[the updated F integration evidence](docs/reports/F_after_E.md).
-The [automatic growth demonstration](docs/reports/README.md#automatic-growth-demonstration)
+See [the verification guide](https://github.com/nukofish/ascii-art-executable/blob/main/docs/modules/verify.md) and
+[the updated F integration evidence](https://github.com/nukofish/ascii-art-executable/blob/main/docs/reports/F_after_E.md).
+The [automatic growth demonstration](https://github.com/nukofish/ascii-art-executable/blob/main/docs/reports/README.md#automatic-growth-demonstration)
 shows how to reproduce and inspect layout retries.
 
 ## Team integration and delivery
 
-[Shared contracts](docs/modules/contracts.md) define A–F entry points,
+Releases are published to PyPI from GitHub releases; see
+[Publishing to PyPI](https://github.com/nukofish/ascii-art-executable/blob/main/docs/publishing.md).
+
+[Shared contracts](https://github.com/nukofish/ascii-art-executable/blob/main/docs/modules/contracts.md) define A–F entry points,
 coordinates, error codes and injected dependencies. Call
 `codeart.pipeline.generate(request, deps=..., cancel_event=...)`.
 Production dependencies load automatically. Test doubles use the same signatures.
@@ -268,7 +373,7 @@ validated against Apple Clang, such as compiler-flag or Mach-O specific work.
 
 ## References
 
-See [docs/references.md](docs/references.md) for the creative background
+See [docs/references.md](https://github.com/nukofish/ascii-art-executable/blob/main/docs/references.md) for the creative background
 (IOCCC, donut.c), the GCC/Clang tokenization references, the bundled Roboto
 Mono font and its OFL license, and the runtime/test dependencies. The donut.c
 entry is inspiration only; no code, math, or rendering path is reused.
@@ -277,7 +382,7 @@ entry is inspiration only; no code, math, or rendering path is reused.
 
 **Compiler not found.** The Clang command-line compiler and the Python
 libclang package are separate dependencies. For Windows, see
-[Running on Windows](docs/windows.md#common-problems). On macOS, install Apple's tools
+[Running on Windows](https://github.com/nukofish/ascii-art-executable/blob/main/docs/windows.md#common-problems). On macOS, install Apple's tools
 with `xcode-select --install`, then check `clang --version`. On Ubuntu 24.04,
 run `sudo apt-get update && sudo apt-get install -y clang-18`, then
 `export PATH="/usr/lib/llvm-18/bin:$PATH"`.
@@ -307,8 +412,8 @@ ordinary or edited input. `OUTPUT_TOO_LARGE` skips behavior due to the
 configured canvas limit. `DEPENDENCY_UNAVAILABLE` requires fixing the
 compiler or library installation; it is not a passing check.
 
-See [F's delivery follow-up](docs/reports/F_delivery.md) and
-[the original completion checklist](docs/reports/F_acceptance.md).
+See [F's delivery follow-up](https://github.com/nukofish/ascii-art-executable/blob/main/docs/reports/F_delivery.md) and
+[the original completion checklist](https://github.com/nukofish/ascii-art-executable/blob/main/docs/reports/F_acceptance.md).
 
 ## Complete-file function extraction / 整份文件提取
 
