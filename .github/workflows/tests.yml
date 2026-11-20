@@ -42,7 +42,11 @@ jobs:
   full:
     name: Full checks (ubuntu, clang + node)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # The suite itself takes about two minutes; the rest is checkout
+    # (fetch-depth 0), the pinned clang install and the pip install.  A slow
+    # hosted runner pushed one observed run to 9m51s, so keep a wide margin
+    # instead of failing the job on infrastructure variance.
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
