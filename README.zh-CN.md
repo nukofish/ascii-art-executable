@@ -164,8 +164,10 @@ python -m scripts.run_verification --output-dir docs/reports/local-check/fixed
 ## CI
 
 当前 CI 采用 #27 已合并的配置：Ubuntu 使用 ubuntu-latest、Python 3.12、
-固定 clang-18 和 pip 提供的 libclang 18.1.1。全量任务检查依赖导入、记录环境、
-检查前端脚本语法和测试数量，再运行完整测试套件。
+固定 clang-18 和 pip 提供的 libclang 18.1.1。Ubuntu 全量任务限时 30 分钟；
+clang-18 不装推荐包，下载的软件包按运行器镜像缓存，因为运行器的 Ubuntu 镜像源
+有时很慢。全量任务检查依赖导入、记录环境、检查前端脚本语法和测试数量，再运行
+完整测试套件。
 Windows 全量任务在 windows-latest 上用 Python 3.12 和运行器自带的 Clang，
 以 PowerShell 运行完整测试、固定验收、整程序样例，以及用中文程序运行命令行
 工具。每一步在前面失败时也照常执行，一次运行就能看到全部 Windows 问题。
